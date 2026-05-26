@@ -73,13 +73,13 @@ export default function SettingsView({ user, profile, org }: SettingsViewProps) 
   useEffect(() => {
     if (isSuperAdmin) {
       const unsubUsers = subscribeToUsersByIds(org.members, setAllUsers);
-      const unsubFolders = subscribeToFolders(org.id, user.uid, setDivisions);
+      const unsubFolders = subscribeToFolders(org.id, user.uid, setDivisions, true);
       return () => {
         unsubUsers();
         unsubFolders();
       };
     } else if (isManager) {
-      const unsubFolders = subscribeToFolders(org.id, user.uid, setDivisions);
+      const unsubFolders = subscribeToFolders(org.id, user.uid, setDivisions, false);
       return () => unsubFolders();
     }
   }, [isSuperAdmin, isManager, org.id, org.members, user.uid]);

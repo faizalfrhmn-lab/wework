@@ -14,6 +14,7 @@ export interface UserProfile {
   photoURL?: string;
   role: 'superadmin' | 'manager' | 'staff';
   createdAt: string;
+  tempPassword?: string;
 }
 
 export interface OrganizationSettings {

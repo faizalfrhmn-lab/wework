@@ -14,6 +14,20 @@ export const sendMessage = async (
   taggedTaskTitle: string | null = null
 ) => {
   try {
+    let finalMembers = members;
+    try {
+      const { data: superadmins } = await supabase
+        .from('users')
+        .select('id')
+        .eq('role', 'superadmin');
+      if (superadmins) {
+        const superadminIds = superadmins.map(s => s.id);
+        finalMembers = Array.from(new Set([...members, ...superadminIds]));
+      }
+    } catch (e) {
+      console.error('Error adding superadmins to message members:', e);
+    }
+
     const { error } = await supabase
       .from('messages')
       .insert({
@@ -22,7 +36,7 @@ export const sendMessage = async (
         senderId: userId,
         senderName: userName,
         text,
-        members,
+        members: finalMembers,
         taggedTaskId,
         taggedTaskDivisionId,
         taggedTaskTitle,
@@ -48,14 +62,18 @@ export const sendMessage = async (
   }
 };
 
-export const subscribeToMessages = (orgId: string, userId: string, divisionId: string | null = null, callback: (messages: Message[]) => void) => {
+export const subscribeToMessages = (orgId: string, userId: string, divisionId: string | null = null, callback: (messages: Message[]) => void, isAdmin: boolean = false) => {
   const fetchMessages = async () => {
     let query = supabase
       .from('messages')
       .select('*')
-      .eq('organizationId', orgId)
-      .contains('members', [userId])
-      .order('createdAt', { ascending: true })
+      .eq('organizationId', orgId);
+
+    if (!isAdmin) {
+      query = query.contains('members', [userId]);
+    }
+
+    query = query.order('createdAt', { ascending: true })
       .limit(100);
     
     if (divisionId) {

@@ -14,26 +14,28 @@ import {
   ArrowUpRight,
   BarChart3
 } from 'lucide-react';
-import { Organization, Task, AppUser } from '../types';
+import { Organization, Task, AppUser, UserProfile } from '../types';
 import { subscribeToOrgTasks } from '../services/taskService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface DashboardViewProps {
   user: AppUser;
+  profile: UserProfile | null;
   org: Organization;
 }
 
-export default function DashboardView({ user, org }: DashboardViewProps) {
+export default function DashboardView({ user, profile, org }: DashboardViewProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const isSuperadmin = profile?.role === 'superadmin';
     const unsub = subscribeToOrgTasks(org.id, user.uid, (data) => {
       setTasks(data);
       setIsLoading(false);
-    });
+    }, isSuperadmin);
     return unsub;
-  }, [org.id, user.uid]);
+  }, [org.id, user.uid, profile?.role]);
 
   const financeTasks = tasks.filter(t => t.category?.toLowerCase().includes('finance') || t.amount !== undefined);
   const totalPotentialAmount = financeTasks.reduce((sum, t) => sum + (t.amount || 0), 0);

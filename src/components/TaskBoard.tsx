@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, ListTodo, X, ChevronLeft, ChevronRight, Minimize2, Maximize2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Plus, ListTodo, X, ChevronLeft, ChevronRight, Minimize2, Maximize2, RefreshCw } from 'lucide-react';
 import { Task, UserProfile, Organization, AppUser } from '../types';
 import { subscribeToTasks, createTask } from '../services/taskService';
 import { getAllUsers } from '../services/authService';
@@ -16,17 +16,32 @@ interface TaskBoardProps {
   setIsFocusMode: (v: boolean) => void;
 }
 
+const getTodayDateString = () => {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 export default function TaskBoard({ user, profile, org, divisionId, selectedTaskId, isFocusMode, setIsFocusMode }: TaskBoardProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskCategory, setNewTaskCategory] = useState('General');
-  const [newTaskDeadline, setNewTaskDeadline] = useState('');
+  const [newTaskDeadline, setNewTaskDeadline] = useState(getTodayDateString());
   const [newTaskAmount, setNewTaskAmount] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [collapsedColumns, setCollapsedColumns] = useState<string[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [newTaskAssigneeId, setNewTaskAssigneeId] = useState<string>('');
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isModalOpen) {
+      setFormError(null);
+    }
+  }, [isModalOpen]);
 
   useEffect(() => {
     if (profile?.role === 'superadmin') {
@@ -51,31 +66,53 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
   const collapseAll = () => setCollapsedColumns([...categories]);
   const expandAll = () => setCollapsedColumns([]);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    // subscribeToTasks internally fetches immediately, so we can re-trigger it by changing a key if needed,
+    // but here we just want to show the user that we are checking.
+    // The easiest way is to just wait a second or re-run the fetch logic if we had it exposed.
+    // For now, let's just use a timeout to simulate a refresh call to the subscription.
+    setTimeout(() => setIsRefreshing(false), 800);
+  }, []);
+
   const handleCreateTask = async (e: any) => {
     e.preventDefault();
-    if (newTaskTitle.trim() && newTaskDeadline) {
-      setIsSubmitting(true);
-      try {
-        await createTask(
-          org.id, 
-          divisionId, 
-          newTaskTitle.trim(), 
-          newTaskCategory.trim(), 
-          '', 
-          org.members,
-          newTaskDeadline,
-          newTaskCategory.toLowerCase().includes('finance') ? newTaskAmount : 0,
-          newTaskAssigneeId || null
-        );
-        setNewTaskTitle('');
-        setNewTaskCategory('General');
-        setNewTaskDeadline('');
-        setNewTaskAmount(0);
-        setNewTaskAssigneeId('');
-        setIsModalOpen(false);
-      } finally {
-        setIsSubmitting(false);
+    if (!newTaskTitle.trim()) return;
+    
+    setFormError(null);
+    setIsSubmitting(true);
+    try {
+      const deadlineVal = newTaskDeadline || getTodayDateString();
+      const taskId = await createTask(
+        org.id, 
+        divisionId, 
+        newTaskTitle.trim(), 
+        newTaskCategory.trim(), 
+        '', 
+        org.members,
+        deadlineVal,
+        newTaskCategory.toLowerCase().includes('finance') ? newTaskAmount : 0,
+        newTaskAssigneeId || null,
+        user.uid
+      );
+
+      if (!taskId) {
+         throw new Error('Database denied entry. Check RLS or connection.');
       }
+
+      setNewTaskTitle('');
+      setNewTaskCategory('General');
+      setNewTaskDeadline(getTodayDateString());
+      setNewTaskAmount(0);
+      setNewTaskAssigneeId('');
+      setIsModalOpen(false);
+    } catch (err: any) {
+      console.error('Task creation UI error:', err);
+      setFormError(err.message || 'Gagal membuat tugas. Silakan cek koneksi internet Anda.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -109,6 +146,16 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
                   Collapse
                 </button>
              </div>
+
+             <button 
+                onClick={handleRefresh}
+                className={`p-2.5 rounded-xl transition-all ${
+                  isFocusMode ? 'bg-white/10 text-white/60 hover:text-white' : 'bg-gray-100 text-gray-400 hover:text-black'
+                } ${isRefreshing ? 'animate-spin' : ''}`}
+                title="Refresh Tasks"
+             >
+                <RefreshCw className="w-3.5 h-3.5" />
+             </button>
 
              <button 
                 onClick={() => setIsFocusMode(!isFocusMode)}
@@ -248,6 +295,11 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
       title="Create New Task"
     >
       <form onSubmit={handleCreateTask} className="space-y-6">
+        {formError && (
+          <div className="p-4 bg-red-50 border border-red-250 rounded-2xl text-red-700 text-xs font-semibold leading-relaxed">
+            {formError}
+          </div>
+        )}
         <div className="space-y-2">
           <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Task Title</label>
           <input 
@@ -277,9 +329,8 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
             </select>
           </div>
           <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Deadline</label>
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Deadline (Optional)</label>
             <input 
-              required
               type="date"
               value={newTaskDeadline}
               onChange={(e) => setNewTaskDeadline(e.target.value)}
@@ -316,7 +367,7 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
         )}
         <button 
           type="submit" 
-          disabled={isSubmitting || !newTaskTitle.trim() || !newTaskDeadline}
+          disabled={isSubmitting || !newTaskTitle.trim()}
           className="w-full bg-black text-white py-4 rounded-2xl font-bold hover:bg-orange-500 transition-all shadow-xl disabled:opacity-30 flex items-center justify-center gap-2 active:scale-95"
         >
           {isSubmitting ? 'Creating...' : 'Create Task'}

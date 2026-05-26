@@ -22,13 +22,14 @@ export default function ChatView({ user, profile, org, divisionId, onNavigateToT
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const unsubMessages = subscribeToMessages(org.id, user.uid, divisionId || null, setMessages);
-    const unsubTasks = subscribeToOrgTasks(org.id, user.uid, setAllTasks);
+    const isSuperadmin = profile?.role === 'superadmin';
+    const unsubMessages = subscribeToMessages(org.id, user.uid, divisionId || null, setMessages, isSuperadmin);
+    const unsubTasks = subscribeToOrgTasks(org.id, user.uid, setAllTasks, isSuperadmin);
     return () => {
       unsubMessages();
       unsubTasks();
     };
-  }, [org.id, divisionId, user.uid]);
+  }, [org.id, divisionId, user.uid, profile?.role]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });

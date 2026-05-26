@@ -99,16 +99,17 @@ export default function TaskCard({ user, profile, org, task, isSelected }: TaskC
 
   useEffect(() => {
     if (isExpanded || isSelected) {
-      const unsubSubtasks = subscribeToSubTasks(task.id, user.uid, setSubtasks);
+      const isSuperadmin = profile?.role === 'superadmin';
+      const unsubSubtasks = subscribeToSubTasks(task.id, user.uid, setSubtasks, isSuperadmin);
       const unsubLinks = subscribeToLibraryItems(task.folderId, user.uid, (links) => {
         setTaskLinks(links.filter(l => l.taskId === task.id));
-      });
+      }, isSuperadmin);
       return () => {
         unsubSubtasks();
         unsubLinks();
       };
     }
-  }, [isExpanded, isSelected, task.id, task.folderId, user.uid]);
+  }, [isExpanded, isSelected, task.id, task.folderId, user.uid, profile?.role]);
 
   useEffect(() => {
     if (subtasks.length > 0) {

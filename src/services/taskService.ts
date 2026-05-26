@@ -2,9 +2,24 @@ import { supabase } from '../lib/supabase';
 import { Task, SubTask, LibraryItem } from '../types';
 import { createBatchNotifications, createNotification } from './notificationService';
 
-export const createTask = async (orgId: string, folderId: string, title: string, category: string, note: string, members: string[], deadline: string, initialAmount: number = 0, assigneeId: string | null = null) => {
+export const createTask = async (orgId: string, folderId: string, title: string, category: string, note: string, members: string[], deadline: string, initialAmount: number = 0, assigneeId: string | null = null, creatorId: string) => {
   try {
-    const finalMembers = [...new Set([...members, ...(assigneeId ? [assigneeId] : [])])];
+    const safeMembers = Array.isArray(members) ? members : [];
+    let finalMembers = [...new Set([...safeMembers, creatorId, ...(assigneeId ? [assigneeId] : [])])];
+    
+    try {
+      const { data: superadmins } = await supabase
+        .from('users')
+        .select('id')
+        .eq('role', 'superadmin');
+      if (superadmins) {
+        const superadminIds = superadmins.map(s => s.id);
+        finalMembers = Array.from(new Set([...finalMembers, ...superadminIds]));
+      }
+    } catch (e) {
+      console.error('Error adding superadmins to task members:', e);
+    }
+    
     const { data, error } = await supabase
       .from('tasks')
       .insert({
@@ -26,36 +41,46 @@ export const createTask = async (orgId: string, folderId: string, title: string,
       .single();
     
     if (error) throw error;
+    if (!data) throw new Error('Failed to create task: No data returned.');
 
     // Notify all members about initial assignment/creation
-    await createBatchNotifications(
-      members,
-      orgId,
-      'task_assignment',
-      `New Task: ${title}`,
-      `A new task has been created in ${category}. Due: ${deadline}`,
-      { view: 'folders', divisionId: folderId, taskId: data.id }
-    );
+    const recipients = finalMembers.filter(m => m !== creatorId);
+    if (recipients.length > 0) {
+      createBatchNotifications(
+        recipients,
+        orgId,
+        'task_assignment',
+        `New Task: ${title}`,
+        `A new task has been created in ${category}. Due: ${deadline}`,
+        { view: 'folders', divisionId: folderId, taskId: data.id }
+      ).catch(err => console.error('Silent notification error:', err));
+    }
 
     return data.id;
   } catch (error) {
     console.error('Create task error:', error);
+    throw error;
   }
 };
 
 export const subscribeToTasks = (divisionId: string, userId: string, callback: (tasks: Task[]) => void, isAdmin: boolean = false) => {
   const fetchTasks = async () => {
-    let query = supabase
-      .from('tasks')
-      .select('*')
-      .eq('folderId', divisionId);
-    
-    if (!isAdmin) {
-      query = query.contains('members', [userId]);
-    }
+    try {
+      let query = supabase
+        .from('tasks')
+        .select('*')
+        .eq('folderId', divisionId);
+      
+      if (!isAdmin) {
+        query = query.contains('members', [userId]);
+      }
 
-    const { data } = await query;
-    if (data) callback(data as Task[]);
+      const { data, error } = await query;
+      if (error) throw error;
+      if (data) callback(data as Task[]);
+    } catch (err) {
+      console.error('Fetch tasks error:', err);
+    }
   };
 
   fetchTasks();
@@ -75,12 +100,26 @@ export const subscribeToTasks = (divisionId: string, userId: string, callback: (
 
 export const addSubTask = async (orgId: string, taskId: string, members: string[], title: string, description: string = '', url: string = '', initialAmount: number = 0) => {
   try {
+    let finalMembers = members;
+    try {
+      const { data: superadmins } = await supabase
+        .from('users')
+        .select('id')
+        .eq('role', 'superadmin');
+      if (superadmins) {
+        const superadminIds = superadmins.map(s => s.id);
+        finalMembers = Array.from(new Set([...members, ...superadminIds]));
+      }
+    } catch (e) {
+      console.error('Error adding superadmins to subtask members:', e);
+    }
+
     const { data, error } = await supabase
       .from('subtasks')
       .insert({
         organizationId: orgId,
         taskId,
-        members,
+        members: finalMembers,
         title,
         description,
         url,
@@ -109,13 +148,16 @@ export const toggleSubTask = async (taskId: string, subtaskId: string, completed
   }
 };
 
-export const subscribeToSubTasks = (taskId: string, userId: string, callback: (subtasks: SubTask[]) => void) => {
+export const subscribeToSubTasks = (taskId: string, userId: string, callback: (subtasks: SubTask[]) => void, isAdmin: boolean = false) => {
   const fetchSubTasks = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('subtasks')
       .select('*')
-      .eq('taskId', taskId)
-      .contains('members', [userId]);
+      .eq('taskId', taskId);
+    if (!isAdmin) {
+      query = query.contains('members', [userId]);
+    }
+    const { data } = await query;
     if (data) callback(data as SubTask[]);
   };
 
@@ -145,6 +187,20 @@ export const addTaskLink = async (
   source: 'task' | 'manual' = 'task'
 ) => {
   try {
+    let finalMembers = members;
+    try {
+      const { data: superadmins } = await supabase
+        .from('users')
+        .select('id')
+        .eq('role', 'superadmin');
+      if (superadmins) {
+        const superadminIds = superadmins.map(s => s.id);
+        finalMembers = Array.from(new Set([...members, ...superadminIds]));
+      }
+    } catch (e) {
+      console.error('Error adding superadmins to task link members:', e);
+    }
+
     const { data, error } = await supabase
       .from('task_links')
       .insert({
@@ -155,7 +211,7 @@ export const addTaskLink = async (
         label,
         url,
         source,
-        members,
+        members: finalMembers,
         createdAt: new Date().toISOString()
       })
       .select()
@@ -167,13 +223,16 @@ export const addTaskLink = async (
   }
 };
 
-export const subscribeToLibraryItems = (divisionId: string, userId: string, callback: (links: LibraryItem[]) => void) => {
+export const subscribeToLibraryItems = (divisionId: string, userId: string, callback: (links: LibraryItem[]) => void, isAdmin: boolean = false) => {
   const fetchLinks = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('task_links')
       .select('*')
-      .eq('divisionId', divisionId)
-      .contains('members', [userId]);
+      .eq('divisionId', divisionId);
+    if (!isAdmin) {
+      query = query.contains('members', [userId]);
+    }
+    const { data } = await query;
     if (data) callback(data as LibraryItem[]);
   };
 
@@ -192,13 +251,16 @@ export const subscribeToLibraryItems = (divisionId: string, userId: string, call
   };
 };
 
-export const subscribeToLinksInFolder = (libraryFolderId: string, userId: string, callback: (links: LibraryItem[]) => void) => {
+export const subscribeToLinksInFolder = (libraryFolderId: string, userId: string, callback: (links: LibraryItem[]) => void, isAdmin: boolean = false) => {
   const fetchLinks = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('task_links')
       .select('*')
-      .eq('libraryFolderId', libraryFolderId)
-      .contains('members', [userId]);
+      .eq('libraryFolderId', libraryFolderId);
+    if (!isAdmin) {
+      query = query.contains('members', [userId]);
+    }
+    const { data } = await query;
     if (data) callback(data as LibraryItem[]);
   };
 
@@ -297,13 +359,16 @@ export const updateTaskProgress = async (taskId: string, progress: number) => {
   }
 };
 
-export const subscribeToOrgTasks = (orgId: string, userId: string, callback: (tasks: Task[]) => void) => {
+export const subscribeToOrgTasks = (orgId: string, userId: string, callback: (tasks: Task[]) => void, isAdmin: boolean = false) => {
   const fetchTasks = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('tasks')
       .select('*')
-      .eq('organizationId', orgId)
-      .contains('members', [userId]);
+      .eq('organizationId', orgId);
+    if (!isAdmin) {
+      query = query.contains('members', [userId]);
+    }
+    const { data } = await query;
     if (data) callback(data as Task[]);
   };
 
@@ -322,13 +387,16 @@ export const subscribeToOrgTasks = (orgId: string, userId: string, callback: (ta
   };
 };
 
-export const subscribeToOrgLinks = (orgId: string, userId: string, callback: (links: LibraryItem[]) => void) => {
+export const subscribeToOrgLinks = (orgId: string, userId: string, callback: (links: LibraryItem[]) => void, isAdmin: boolean = false) => {
   const fetchLinks = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('task_links')
       .select('*')
-      .eq('organizationId', orgId)
-      .contains('members', [userId]);
+      .eq('organizationId', orgId);
+    if (!isAdmin) {
+      query = query.contains('members', [userId]);
+    }
+    const { data } = await query;
     if (data) callback(data as LibraryItem[]);
   };
 
@@ -345,4 +413,17 @@ export const subscribeToOrgLinks = (orgId: string, userId: string, callback: (li
   return () => {
     supabase.removeChannel(channel);
   };
+};
+
+export const deleteTaskLink = async (linkId: string) => {
+  try {
+    const { error } = await supabase
+      .from('task_links')
+      .delete()
+      .eq('id', linkId);
+    if (error) throw error;
+  } catch (error) {
+    console.error('Delete task link error:', error);
+    throw error;
+  }
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, MouseEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, 
@@ -6,10 +6,13 @@ import {
   Building2,
   Folder as FolderIcon,
   Menu,
-  ArrowLeft
+  ArrowLeft,
+  Trash2,
+  MoreVertical,
+  Edit2
 } from 'lucide-react';
 import { Organization, Division, UserProfile, AppUser } from '../types';
-import { subscribeToFolders, createFolder } from '../services/orgService';
+import { subscribeToFolders, createFolder, deleteFolder, updateFolder } from '../services/orgService';
 import TaskBoard from './TaskBoard';
 import LibraryExplorer from './LibraryExplorer';
 import ChatView from './ChatView';
@@ -42,6 +45,8 @@ export default function FoldersView({
   const [activeSubView, setActiveSubView] = useState<'tasks' | 'library' | 'chat'>('tasks');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
+  const isManager = profile?.role === 'manager' || profile?.role === 'superadmin' || org.managerId === user.uid;
+
   useEffect(() => {
     if (selectedTaskId) {
       setActiveSubView('tasks');
@@ -51,23 +56,79 @@ export default function FoldersView({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newDivisionName, setNewDivisionName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = subscribeToFolders(org.id, user.uid, setDivisions);
+    if (!isModalOpen) {
+      setFormError(null);
+    }
+  }, [isModalOpen]);
+
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+
+  const handleEditDivision = async (e: any) => {
+    e.preventDefault();
+    if (!editingFolderId || !editName.trim()) return;
+
+    setIsSubmitting(true);
+    try {
+      await updateFolder(editingFolderId, editName.trim());
+      setEditingFolderId(null);
+      setActiveMenuId(null);
+    } catch (err: any) {
+      alert(`Gagal mengubah nama Divisi: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    const isSuperadmin = profile?.role === 'superadmin';
+    const unsub = subscribeToFolders(org.id, user.uid, setDivisions, isSuperadmin);
     return unsub;
-  }, [org.id, user.uid]);
+  }, [org.id, user.uid, profile?.role]);
 
   const handleCreateDivision = async (e: any) => {
     e.preventDefault();
     if (newDivisionName.trim()) {
+      setFormError(null);
       setIsSubmitting(true);
       try {
-        await createFolder(org.id, newDivisionName.trim(), '', org.members);
+        const newFolderId = await createFolder(org.id, newDivisionName.trim(), '', org.members);
+        if (newFolderId) {
+          setSelectedFolderId(newFolderId);
+        }
         setNewDivisionName('');
         setIsModalOpen(false);
+      } catch (err: any) {
+        console.error('Create division error:', err);
+        setFormError(err.message || 'Gagal membuat divisi. Silakan coba lagi.');
       } finally {
         setIsSubmitting(false);
       }
+    }
+  };
+
+  const handleDeleteDivision = async (e: MouseEvent, divisionId: string) => {
+    e.stopPropagation();
+    if (isDeleting) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteFolder(divisionId);
+      if (selectedFolderId === divisionId) {
+        setSelectedFolderId(null);
+      }
+      setDeletingFolderId(null);
+    } catch (err: any) {
+      alert(`Gagal menghapus divisi: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -103,16 +164,23 @@ export default function FoldersView({
         
         <div className="flex-1 overflow-y-auto px-4 pb-10 space-y-1 no-scrollbar lg:mt-2">
           {divisions.map((division) => (
-            <button
+            <div
               key={division.id}
               onClick={() => {
                 setSelectedFolderId(division.id);
               }}
-              className={`w-full group flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 text-left ${
+              className={`w-full group flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 text-left cursor-pointer ${
                 selectedFolderId === division.id 
                   ? 'bg-orange-500/5 text-orange-600' 
                   : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
               }`}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  setSelectedFolderId(division.id);
+                }
+              }}
             >
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 ${
                 selectedFolderId === division.id ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' : 'bg-gray-100 text-gray-400 group-hover:bg-white'
@@ -122,8 +190,102 @@ export default function FoldersView({
               <div className="flex-1 min-w-0">
                 <p className={`font-bold text-sm truncate tracking-tight leading-tight ${selectedFolderId === division.id ? 'text-black' : ''}`}>{division.name}</p>
               </div>
+              
+              {isManager && (
+                <div className="relative group/menu flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveMenuId(activeMenuId === division.id ? null : division.id);
+                    }}
+                    className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-40 relative ${
+                      selectedFolderId === division.id ? 'text-orange-600 hover:bg-orange-500/10' : 'text-gray-300 hover:text-black hover:bg-gray-100'
+                    }`}
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+
+                  <AnimatePresence>
+                    {activeMenuId === division.id && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                        className="absolute right-0 top-full mt-2 w-32 bg-white border border-gray-100 rounded-xl shadow-2xl z-[100] overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() => {
+                            setEditingFolderId(division.id);
+                            setEditName(division.name);
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2.5 text-[11px] font-bold text-gray-400 hover:text-black hover:bg-gray-50 transition-all text-left"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          Ubah Nama
+                        </button>
+                        <button
+                          onClick={() => {
+                            setDeletingFolderId(division.id);
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2.5 text-[11px] font-bold text-red-500/60 hover:text-red-500 hover:bg-red-50 transition-all text-left border-t border-gray-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Hapus
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Delete Confirmation Overlay */}
+                  <AnimatePresence>
+                    {deletingFolderId === division.id && (
+                      <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <motion.div 
+                          initial={{ scale: 0.9, y: 20 }}
+                          animate={{ scale: 1, y: 0 }}
+                          className="bg-white rounded-3xl p-8 max-w-xs w-full shadow-2xl text-center"
+                        >
+                          <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                            <Trash2 className="w-8 h-8" />
+                          </div>
+                          <h3 className="text-xl font-black text-gray-900 mb-2 uppercase tracking-tighter">Hapus Divisi?</h3>
+                          <p className="text-sm text-gray-500 font-medium leading-relaxed mb-8">
+                             Seluruh data tugas dan library di <span className="font-bold text-black">"{division.name}"</span> akan dihapus permanen.
+                          </p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <button
+                              disabled={isDeleting}
+                              onClick={() => setDeletingFolderId(null)}
+                              className="py-4 rounded-2xl font-bold text-sm text-gray-400 hover:text-black hover:bg-gray-50 transition-all border border-gray-100"
+                            >
+                              Batal
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteDivision(e, division.id)}
+                              disabled={isDeleting}
+                              className="py-4 bg-red-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all disabled:opacity-50"
+                            >
+                              {isDeleting ? 'Menghapus...' : 'Hapus'}
+                            </button>
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
               <ChevronRight className={`w-4 h-4 transition-all ${selectedFolderId === division.id ? 'translate-x-1 text-orange-500' : 'opacity-0 group-hover:opacity-100 group-hover:translate-x-1'}`} />
-            </button>
+            </div>
           ))}
         </div>
       </div>
@@ -254,7 +416,7 @@ export default function FoldersView({
                         <h3 className="text-3xl font-black uppercase tracking-tighter text-gray-900 mb-2">Resource Library</h3>
                         <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Digital Assets & Documentation</p>
                       </div>
-                      {selectedDivision && <LibraryExplorer user={user} org={org} division={selectedDivision} />}
+                      {selectedDivision && <LibraryExplorer user={user} profile={profile} org={org} division={selectedDivision} />}
                     </div>
                   </motion.div>
                 ) : (
@@ -287,6 +449,11 @@ export default function FoldersView({
       title="Create New Division"
     >
       <form onSubmit={handleCreateDivision} className="space-y-6">
+        {formError && (
+          <div className="p-4 bg-red-50 border border-red-250 rounded-2xl text-red-700 text-xs font-semibold leading-relaxed">
+            {formError}
+          </div>
+        )}
         <div className="space-y-2">
           <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Division Name</label>
           <input 
@@ -305,6 +472,32 @@ export default function FoldersView({
           className="w-full bg-black text-white py-4 rounded-2xl font-bold hover:bg-indigo-600 transition-all shadow-xl disabled:opacity-30 flex items-center justify-center gap-2 active:scale-95"
         >
           {isSubmitting ? 'Creating...' : 'Create Division'}
+        </button>
+      </form>
+    </Modal>
+
+    <Modal
+      isOpen={editingFolderId !== null}
+      onClose={() => setEditingFolderId(null)}
+      title="Ubah Nama Divisi"
+    >
+      <form onSubmit={handleEditDivision} className="space-y-6">
+        <div className="space-y-2">
+          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Nama Baru</label>
+          <input 
+            autoFocus
+            required
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm font-medium focus:ring-4 focus:ring-orange-500/10 focus:bg-white transition-all outline-none"
+          />
+        </div>
+        <button 
+          type="submit"
+          className="w-full bg-black text-white py-4 rounded-2xl font-bold hover:bg-orange-500 transition-all shadow-xl active:scale-95"
+        >
+          Simpan Perubahan
         </button>
       </form>
     </Modal>

@@ -3,6 +3,18 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Outfit", sans-serif;
+  
+  --color-orange-50: #f0fbf8;
+  --color-orange-100: #daf4ed;
+  --color-orange-200: #b9e7da;
+  --color-orange-300: #89d3c0;
+  --color-orange-400: #59bca4;
+  --color-orange-500: #469c84; /* Green/teal color matching the logo */
+  --color-orange-600: #357c69;
+  --color-orange-700: #2c6556;
+  --color-orange-800: #255146;
+  --color-orange-900: #21443c;
+  --color-orange-950: #0f2421;
 }
 
 @layer base {

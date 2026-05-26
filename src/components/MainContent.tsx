@@ -61,14 +61,15 @@ export default function MainContent({
   
   useEffect(() => {
     if (selectedOrg && user) {
-      const unsubTasks = subscribeToOrgTasks(selectedOrg.id, user.uid, setAllTasks);
-      const unsubLinks = subscribeToOrgLinks(selectedOrg.id, user.uid, setAllLinks);
+      const isSuperadmin = profile?.role === 'superadmin';
+      const unsubTasks = subscribeToOrgTasks(selectedOrg.id, user.uid, setAllTasks, isSuperadmin);
+      const unsubLinks = subscribeToOrgLinks(selectedOrg.id, user.uid, setAllLinks, isSuperadmin);
       return () => {
         unsubTasks();
         unsubLinks();
       };
     }
-  }, [selectedOrg, user]);
+  }, [selectedOrg, user, profile?.role]);
 
   const filteredTasks = searchQuery.trim().length > 1 
     ? allTasks.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -319,7 +320,7 @@ export default function MainContent({
               exit={{ opacity: 0, x: -20 }}
               className="absolute inset-0"
             >
-              <DashboardView user={user} org={selectedOrg} />
+              <DashboardView user={user} profile={profile} org={selectedOrg} />
             </motion.div>
           )}
           {activeView === 'users' && profile?.role === 'superadmin' && (
@@ -330,7 +331,7 @@ export default function MainContent({
               exit={{ opacity: 0, x: -20 }}
               className="absolute inset-0"
             >
-              <UsersView />
+              <UsersView currentProfile={profile} />
             </motion.div>
           )}
           {activeView === 'settings' && (
