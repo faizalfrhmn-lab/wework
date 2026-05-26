@@ -3,12 +3,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Organization, Folder, UserProfile, Task, LibraryItem, AppUser } from '../types';
 import { createOrganization } from '../services/orgService';
 import { subscribeToOrgTasks, subscribeToOrgLinks } from '../services/taskService';
-import { Building2, Plus, Search, X, Tag, ChevronRight, FileText, ExternalLink, ChevronUp, ChevronDown, Menu } from 'lucide-react';
+import { Building2, Plus, Search, X, Tag, ChevronRight, FileText, ExternalLink, ChevronUp, ChevronDown, Menu, Folder as FolderIcon, MessageSquare, BarChart3, Users } from 'lucide-react';
 import FoldersView from './FoldersView';
 import ChatView from './ChatView';
 import DashboardView from './DashboardView';
 import SettingsView from './SettingsView';
 import UsersView from './UsersView';
+import SpaceMembersView from './SpaceMembersView';
 import Modal from './Modal';
 import NotificationBell from './NotificationBell';
 
@@ -16,7 +17,8 @@ interface MainContentProps {
   user: AppUser;
   profile: UserProfile | null;
   selectedOrg: Organization | undefined;
-  activeView: 'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings' | 'users';
+  setSelectedOrgId?: (id: string | null) => void;
+  activeView: 'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings' | 'users' | 'space-members';
   setActiveView: (view: any) => void;
   selectedDivisionId: string | null;
   setSelectedDivisionId: (id: string | null) => void;
@@ -28,6 +30,7 @@ export default function MainContent({
   user, 
   profile,
   selectedOrg, 
+  setSelectedOrgId,
   activeView, 
   setActiveView,
   selectedDivisionId, 
@@ -79,7 +82,10 @@ export default function MainContent({
     ? allLinks.filter(l => l.label.toLowerCase().includes(searchQuery.toLowerCase()))
     : [];
 
-  const handleNavigateToTask = (divisionId: string, taskId: string) => {
+  const handleNavigateToTask = (divisionId: string, taskId: string, orgId?: string) => {
+    if (orgId && setSelectedOrgId && selectedOrg?.id !== orgId) {
+      setSelectedOrgId(orgId);
+    }
     setSelectedDivisionId(divisionId);
     setSelectedTaskId(taskId);
     setActiveView('folders');
@@ -87,7 +93,10 @@ export default function MainContent({
     setSearchQuery('');
   };
 
-  const handleNavigateToChat = (divisionId?: string) => {
+  const handleNavigateToChat = (divisionId?: string, orgId?: string) => {
+    if (orgId && setSelectedOrgId && selectedOrg?.id !== orgId) {
+      setSelectedOrgId(orgId);
+    }
     setSelectedDivisionId(divisionId || null);
     setActiveView('chat');
     setSearchQuery('');
@@ -152,7 +161,7 @@ export default function MainContent({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 relative">
-      <header className={`px-8 transition-all duration-300 border-b border-black/5 shrink-0 bg-white/50 backdrop-blur-xl z-20 overflow-hidden ${isHeaderVisible && !isFocusMode ? 'py-5 opacity-100' : 'h-0 py-0 opacity-0'}`}>
+      <header className={`px-8 transition-all duration-300 border-b border-black/5 shrink-0 bg-white/50 backdrop-blur-xl z-[50] ${isHeaderVisible && !isFocusMode ? 'py-5 opacity-100' : 'h-0 py-0 opacity-0 overflow-hidden'}`}>
         <div className="flex items-center justify-between gap-8">
           <div className="min-w-0 flex items-center gap-6">
             <div>
@@ -243,7 +252,6 @@ export default function MainContent({
           <div className="hidden md:flex items-center gap-4 shrink-0">
              <NotificationBell 
                userId={user.uid} 
-               orgId={selectedOrg.id} 
                onNavigateToTask={handleNavigateToTask}
                onNavigateToChat={handleNavigateToChat}
              />
@@ -257,6 +265,49 @@ export default function MainContent({
           </div>
         </div>
       </header>
+
+      {/* Space-Specific Sub Navigation */}
+      {activeView !== 'settings' && (
+        <div className="px-8 py-3.5 bg-gray-50/50 backdrop-blur-md border-b border-black/[0.03] flex items-center justify-between gap-4 overflow-x-auto no-scrollbar shrink-0 select-none">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+            {[
+              { id: 'folders', icon: FolderIcon, label: 'Divisions' },
+              { id: 'team-chat', icon: MessageSquare, label: 'Space Chat' },
+              { id: 'dashboard', icon: BarChart3, label: 'KPI Dashboard' },
+              { id: 'space-members', icon: Users, label: 'Space Members' },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeView === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveView(tab.id as any)}
+                  className={`flex items-center gap-2 px-4.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-300 relative cursor-pointer outline-none border border-transparent ${
+                    isActive 
+                      ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/10 scale-[1.02]' 
+                      : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100/60'
+                  }`}
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span>{tab.label}</span>
+                  {isActive && (
+                    <motion.div 
+                      layoutId="activeSpaceTabLine" 
+                      className="absolute -bottom-3.5 left-4 right-4 h-0.5 bg-orange-500 rounded-full hidden md:block"
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="hidden lg:flex items-center gap-2 text-[10px] font-extrabold text-gray-400 uppercase tracking-widest bg-white shadow-sm border border-black/5 px-4 py-2.5 rounded-xl">
+            <Building2 className="w-3.5 h-3.5 text-orange-500" />
+            <span>{selectedOrg.name} Hub</span>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden relative">
         {!isHeaderVisible && (
@@ -298,7 +349,13 @@ export default function MainContent({
               exit={{ opacity: 0, x: -20 }}
               className="absolute inset-0"
             >
-              <ChatView user={user} profile={profile} org={selectedOrg} onNavigateToTask={handleNavigateToTask} />
+              <ChatView 
+                user={user} 
+                profile={profile} 
+                org={selectedOrg} 
+                divisionId={selectedDivisionId || undefined}
+                onNavigateToTask={handleNavigateToTask} 
+              />
             </motion.div>
           )}
           {activeView === 'team-chat' && (
@@ -309,7 +366,13 @@ export default function MainContent({
               exit={{ opacity: 0, x: -20 }}
               className="absolute inset-0"
             >
-              <ChatView user={user} profile={profile} org={selectedOrg} onNavigateToTask={handleNavigateToTask} />
+              <ChatView 
+                user={user} 
+                profile={profile} 
+                org={selectedOrg} 
+                divisionId={undefined}
+                onNavigateToTask={handleNavigateToTask} 
+              />
             </motion.div>
           )}
           {activeView === 'dashboard' && (
@@ -332,6 +395,17 @@ export default function MainContent({
               className="absolute inset-0"
             >
               <UsersView currentProfile={profile} />
+            </motion.div>
+          )}
+          {activeView === 'space-members' && selectedOrg && (
+            <motion.div
+              key="space-members"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="absolute inset-0"
+            >
+              <SpaceMembersView user={user} profile={profile} org={selectedOrg} />
             </motion.div>
           )}
           {activeView === 'settings' && (

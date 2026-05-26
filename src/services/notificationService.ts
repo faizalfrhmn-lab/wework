@@ -57,15 +57,14 @@ export const createBatchNotifications = async (
   }
 };
 
-export const subscribeToNotifications = (userId: string, orgId: string, callback: (notifications: AppNotification[]) => void) => {
+export const subscribeToNotifications = (userId: string, callback: (notifications: AppNotification[]) => void) => {
   const fetchNotifications = async () => {
     const { data } = await supabase
       .from('notifications')
       .select('*')
       .eq('userId', userId)
-      .eq('orgId', orgId)
       .order('createdAt', { ascending: false })
-      .limit(20);
+      .limit(30);
     if (data) callback(data as AppNotification[]);
   };
 

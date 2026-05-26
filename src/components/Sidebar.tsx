@@ -28,7 +28,7 @@ interface SidebarProps {
   orgs: Organization[];
   selectedOrgId: string | null;
   setSelectedOrgId: (id: string) => void;
-  activeView: 'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings';
+  activeView: 'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings' | 'users';
   setActiveView: (view: any) => void;
   isCollapsed: boolean;
   setIsCollapsed: (c: boolean) => void;
@@ -200,7 +200,10 @@ export default function Sidebar({
                 {orgs.map((org) => (
                   <div
                     key={org.id}
-                    onClick={() => setSelectedOrgId(org.id)}
+                    onClick={() => {
+                      setSelectedOrgId(org.id);
+                      setActiveView('folders');
+                    }}
                     className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl transition-all duration-300 group relative cursor-pointer ${
                       selectedOrgId === org.id 
                         ? 'bg-orange-500 text-white shadow-[0_8px_20px_rgba(70,156,132,0.3)]' 
@@ -212,6 +215,7 @@ export default function Sidebar({
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         setSelectedOrgId(org.id);
+                        setActiveView('folders');
                       }
                     }}
                   >
@@ -346,10 +350,7 @@ export default function Sidebar({
                   className="space-y-1 overflow-hidden px-3"
                 >
                   {[
-                    { id: 'folders', icon: FolderIcon, label: 'Divisions' },
-                    { id: 'team-chat', icon: MessageSquare, label: 'Chat' },
-                    ...(profile?.role === 'superadmin' ? [{ id: 'users', icon: Users, label: 'Users List' }] : []),
-                    { id: 'dashboard', icon: BarChart3, label: 'KPI' },
+                    ...(profile?.role === 'superadmin' ? [{ id: 'users', icon: Users, label: 'User Directory' }] : []),
                     { id: 'settings', icon: Settings, label: 'Settings' },
                   ].map((item) => (
                     <button

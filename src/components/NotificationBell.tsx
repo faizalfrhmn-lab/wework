@@ -6,21 +6,20 @@ import { subscribeToNotifications, markAsRead, markAllAsRead } from '../services
 
 interface NotificationBellProps {
   userId: string;
-  orgId: string;
-  onNavigateToTask: (divisionId: string, taskId: string) => void;
-  onNavigateToChat: (divisionId?: string) => void;
+  onNavigateToTask: (divisionId: string, taskId: string, orgId?: string) => void;
+  onNavigateToChat: (divisionId?: string, orgId?: string) => void;
 }
 
-export default function NotificationBell({ userId, orgId, onNavigateToTask, onNavigateToChat }: NotificationBellProps) {
+export default function NotificationBell({ userId, onNavigateToTask, onNavigateToChat }: NotificationBellProps) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const unreadCount = notifications.filter(n => !n.read).length;
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const unsub = subscribeToNotifications(userId, orgId, setNotifications);
+    const unsub = subscribeToNotifications(userId, setNotifications);
     return unsub;
-  }, [userId, orgId]);
+  }, [userId]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -38,9 +37,9 @@ export default function NotificationBell({ userId, orgId, onNavigateToTask, onNa
     
     if (n.link) {
       if (n.link.view === 'folders' && n.link.divisionId && n.link.taskId) {
-        onNavigateToTask(n.link.divisionId, n.link.taskId);
+        onNavigateToTask(n.link.divisionId, n.link.taskId, n.orgId);
       } else if (n.link.view === 'chat') {
-        onNavigateToChat(n.link.divisionId);
+        onNavigateToChat(n.link.divisionId, n.orgId);
       }
     }
   };

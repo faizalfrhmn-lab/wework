@@ -152,15 +152,17 @@ export default function FoldersView({
           </button>
         </div>
 
-        <div className="px-6 mb-6">
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white py-3.5 px-4 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-orange-500 hover:shadow-xl hover:shadow-orange-500/20 transition-all active:scale-95 group"
-          >
-            <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform" />
-            Add District
-          </button>
-        </div>
+        {isManager && (
+          <div className="px-6 mb-6">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white py-3.5 px-4 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-orange-500 hover:shadow-xl hover:shadow-orange-500/20 transition-all active:scale-95 group"
+            >
+              <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform" />
+              Add District
+            </button>
+          </div>
+        )}
         
         <div className="flex-1 overflow-y-auto px-4 pb-10 space-y-1 no-scrollbar lg:mt-2">
           {divisions.map((division) => (

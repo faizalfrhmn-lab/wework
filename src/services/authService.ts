@@ -201,8 +201,9 @@ export const subscribeToUserProfile = (userId: string, callback: (profile: UserP
   fetchProfile();
 
   // Listen for changes
+  const channelId = `user_profile_${userId}_${Math.random().toString(36).substring(7)}`;
   const channel = supabase
-    .channel(`user_profile_${userId}`)
+    .channel(channelId)
     .on('postgres_changes', { 
       event: '*', 
       schema: 'public', 
@@ -327,8 +328,9 @@ export const subscribeToUsersByIds = (userIds: string[], callback: (users: UserP
 
   fetchUsers();
 
+  const channelId = `users_by_ids_${Math.random().toString(36).substring(7)}`;
   const channel = supabase
-    .channel('users_by_ids')
+    .channel(channelId)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
       fetchUsers();
     })

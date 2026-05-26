@@ -95,7 +95,8 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
         deadlineVal,
         newTaskCategory.toLowerCase().includes('finance') ? newTaskAmount : 0,
         newTaskAssigneeId || null,
-        user.uid
+        user.uid,
+        profile?.displayName || user.displayName || user.email || 'Seseorang'
       );
 
       if (!taskId) {

@@ -32,7 +32,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings'>('folders');
+  const [activeView, setActiveView] = useState<'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings' | 'users'>('folders');
   const [selectedDivisionId, setSelectedDivisionId] = useState<string | null>(null);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -339,6 +339,7 @@ export default function App() {
           user={user}
           profile={profile}
           selectedOrg={selectedOrg}
+          setSelectedOrgId={setSelectedOrgId}
           activeView={activeView}
           setActiveView={setActiveView}
           selectedDivisionId={selectedDivisionId}

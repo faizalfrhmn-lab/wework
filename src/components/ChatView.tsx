@@ -4,22 +4,48 @@ import { Send, Hash, MessageSquare, Coffee, Tag, X } from 'lucide-react';
 import { Organization, Message, Task, UserProfile, AppUser } from '../types';
 import { sendMessage, subscribeToMessages } from '../services/chatService';
 import { subscribeToOrgTasks } from '../services/taskService';
+import { supabase } from '../lib/supabase';
 
 interface ChatViewProps {
   user: AppUser;
   profile: UserProfile | null;
   org: Organization;
   divisionId?: string;
+  divisionName?: string;
   onNavigateToTask?: (divisionId: string, taskId: string) => void;
 }
 
-export default function ChatView({ user, profile, org, divisionId, onNavigateToTask }: ChatViewProps) {
+export default function ChatView({ user, profile, org, divisionId, divisionName: initialDivisionName, onNavigateToTask }: ChatViewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [taggedTask, setTaggedTask] = useState<Task | null>(null);
   const [showTaskPicker, setShowTaskPicker] = useState(false);
+  const [divisionName, setDivisionName] = useState<string | null>(initialDivisionName || null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (initialDivisionName) {
+      setDivisionName(initialDivisionName);
+      return;
+    }
+    if (!divisionId) {
+      setDivisionName(null);
+      return;
+    }
+
+    const fetchDivisionName = async () => {
+      const { data } = await supabase
+        .from('folders')
+        .select('name')
+        .eq('id', divisionId)
+        .single();
+      if (data) {
+        setDivisionName(data.name);
+      }
+    };
+    fetchDivisionName();
+  }, [divisionId, initialDivisionName]);
 
   useEffect(() => {
     const isSuperadmin = profile?.role === 'superadmin';
@@ -63,10 +89,10 @@ export default function ChatView({ user, profile, org, divisionId, onNavigateToT
           </div>
           <div>
             <h2 className="text-xl font-black text-gray-900 uppercase tracking-tighter">
-              {divisionId ? 'Division Chat' : 'Team Collaboration'}
+              {divisionId ? (divisionName ? `Chat: ${divisionName}` : 'Division Chat') : 'Space Chat'}
             </h2>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-              {divisionId ? 'Focused Discussion' : `${org.members.length} members online`}
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest font-mono">
+              {divisionId ? 'Focused Team Discussion' : `Global Space Chat · ${org.members.length} Members`}
             </p>
           </div>
         </div>

@@ -48,8 +48,9 @@ export const subscribeToOrganizations = (userId: string, callback: (orgs: Organi
 
   fetchOrgs();
 
+  const channelId = `organizations_changes_${Math.random().toString(36).substring(7)}`;
   const channel = supabase
-    .channel('organizations_changes')
+    .channel(channelId)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'organizations' }, () => {
       fetchOrgs();
     })
@@ -101,17 +102,15 @@ export const subscribeToFolders = (orgId: string, userId: string, callback: (fol
       .from('folders')
       .select('*')
       .eq('organizationId', orgId);
-    if (!isAdmin) {
-      query = query.contains('members', [userId]);
-    }
     const { data } = await query;
     if (data) callback(data as Folder[]);
   };
 
   fetchFolders();
 
+  const channelId = `folders_changes_${Math.random().toString(36).substring(7)}`;
   const channel = supabase
-    .channel('folders_changes')
+    .channel(channelId)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'folders' }, () => {
       fetchFolders();
     })
@@ -163,17 +162,15 @@ export const subscribeToLibraryFolders = (divisionId: string, userId: string, ca
       .from('library_folders')
       .select('*')
       .eq('divisionId', divisionId);
-    if (!isAdmin) {
-      query = query.contains('members', [userId]);
-    }
     const { data } = await query;
     if (data) callback(data as LibraryFolder[]);
   };
 
   fetchFolders();
 
+  const channelId = `library_folders_changes_${Math.random().toString(36).substring(7)}`;
   const channel = supabase
-    .channel('library_folders_changes')
+    .channel(channelId)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'library_folders' }, () => {
       fetchFolders();
     })

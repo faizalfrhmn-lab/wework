@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   MoreVertical, 
@@ -17,8 +17,8 @@ import {
   DollarSign
 } from 'lucide-react';
 import { Task, SubTask, LibraryItem, UserProfile, Organization, AppUser } from '../types';
-import { subscribeToSubTasks, addSubTask, toggleSubTask, addTaskLink, updateTaskProgress, subscribeToLibraryItems, updateTaskStatus, updateSubTaskRevenue } from '../services/taskService';
-import { subscribeToUserProfile } from '../services/authService';
+import { subscribeToSubTasks, addSubTask, toggleSubTask, addTaskLink, updateTaskProgress, subscribeToLibraryItems, updateTaskStatus, updateSubTaskRevenue, updateTaskAssignee } from '../services/taskService';
+import { subscribeToUserProfile, subscribeToUsersByIds } from '../services/authService';
 
 interface TaskCardProps {
   key?: string | number;
@@ -31,6 +31,9 @@ interface TaskCardProps {
 
 export default function TaskCard({ user, profile, org, task, isSelected }: TaskCardProps) {
   const [isExpanded, setIsExpanded] = useState(isSelected);
+  const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const assigneeDropdownRef = useRef<HTMLDivElement>(null);
   const [subtasks, setSubtasks] = useState<SubTask[]>([]);
   const [taskLinks, setTaskLinks] = useState<LibraryItem[]>([]);
   const [showAddSubtask, setShowAddSubtask] = useState(false);
@@ -44,6 +47,46 @@ export default function TaskCard({ user, profile, org, task, isSelected }: TaskC
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [assigneeProfile, setAssigneeProfile] = useState<UserProfile | null>(null);
+  const [memberProfiles, setMemberProfiles] = useState<UserProfile[]>([]);
+
+  useEffect(() => {
+    if (isSelected) {
+      setIsExpanded(true);
+      
+      // Perform multi-stage scrolling to ensure accurate positioning
+      // as layout shifts and dynamic height items (subtasks, links) are injected.
+      const scrollHandler = () => {
+        cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      };
+
+      const timer1 = setTimeout(scrollHandler, 150);
+      const timer2 = setTimeout(scrollHandler, 500);
+      const timer3 = setTimeout(scrollHandler, 1000);
+
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+      };
+    }
+  }, [isSelected]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (assigneeDropdownRef.current && !assigneeDropdownRef.current.contains(event.target as Node)) {
+        setIsAssigneeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (org?.members && org.members.length > 0) {
+      const unsub = subscribeToUsersByIds(org.members, setMemberProfiles);
+      return unsub;
+    }
+  }, [org?.members]);
 
   const handleAddSubTask = async (e: FormEvent) => {
     e.preventDefault();
@@ -209,9 +252,14 @@ export default function TaskCard({ user, profile, org, task, isSelected }: TaskC
 
   return (
     <motion.div 
+      ref={cardRef}
       layout
       transition={{ layout: { duration: 0.2 } }}
-      className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group cursor-pointer relative ${isSelected ? 'ring-4 ring-orange-500/20 border-orange-500 shadow-xl' : 'border-gray-100'}`}
+      className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group cursor-pointer relative ${
+        isSelected 
+          ? 'ring-4 ring-orange-500/30 border-orange-500 border-l-8 border-l-orange-500 shadow-2xl bg-orange-50/10 scale-[1.02]' 
+          : 'border-gray-100'
+      }`}
       onClick={() => !isExpanded && setIsExpanded(true)}
     >
       <AnimatePresence>
@@ -297,9 +345,63 @@ export default function TaskCard({ user, profile, org, task, isSelected }: TaskC
            <div className="flex items-center gap-2">
              <div className="flex flex-col items-end">
                <span className="text-[9px] font-black uppercase tracking-tighter text-gray-400">Assignee</span>
-               <span className="text-[10px] font-bold text-gray-600 max-w-[80px] truncate">
-                 {assigneeProfile ? (assigneeProfile.displayName || assigneeProfile.email) : 'Unassigned'}
-               </span>
+               {isManager ? (
+                 <div className="relative" ref={assigneeDropdownRef}>
+                   <button
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       setIsAssigneeDropdownOpen(!isAssigneeDropdownOpen);
+                     }}
+                     className="text-[10px] font-bold text-gray-600 bg-transparent hover:text-orange-500 transition-colors flex items-center gap-1 cursor-pointer outline-none max-w-[125px] text-right"
+                   >
+                     <span>
+                       {assigneeProfile ? (assigneeProfile.displayName || assigneeProfile.email) : 'Unassigned'}
+                     </span>
+                   </button>
+                   
+                   <AnimatePresence>
+                     {isAssigneeDropdownOpen && (
+                       <motion.div
+                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                         animate={{ opacity: 1, y: 0, scale: 1 }}
+                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                         onClick={(e) => e.stopPropagation()}
+                         className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-black/5 py-1 z-[110] max-h-60 overflow-y-auto no-scrollbar"
+                       >
+                         <button
+                           onClick={async () => {
+                             setIsAssigneeDropdownOpen(false);
+                             await updateTaskAssignee(task.id, null, org.id, user.uid, profile?.displayName || user.displayName || user.email || 'Seseorang');
+                           }}
+                           className={`w-full text-left px-4 py-2 text-[11px] font-bold hover:bg-gray-50 flex items-center justify-between ${
+                             !task.assigneeId ? 'text-orange-500' : 'text-gray-600'
+                           }`}
+                         >
+                           <span>Unassigned</span>
+                         </button>
+                         {memberProfiles.map(u => (
+                           <button
+                             key={u.id}
+                             onClick={async () => {
+                               setIsAssigneeDropdownOpen(false);
+                               await updateTaskAssignee(task.id, u.id, org.id, user.uid, profile?.displayName || user.displayName || user.email || 'Seseorang');
+                             }}
+                             className={`w-full text-left px-4 py-2 text-[11px] font-bold hover:bg-gray-50 flex items-center justify-between ${
+                               task.assigneeId === u.id ? 'text-orange-500 bg-orange-50/20' : 'text-gray-600'
+                             }`}
+                           >
+                             <span className="truncate">{u.displayName || u.email}</span>
+                           </button>
+                         ))}
+                       </motion.div>
+                     )}
+                   </AnimatePresence>
+                 </div>
+               ) : (
+                 <span className="text-[10px] font-bold text-gray-600 max-w-[80px] truncate">
+                   {assigneeProfile ? (assigneeProfile.displayName || assigneeProfile.email) : 'Unassigned'}
+                 </span>
+               )}
              </div>
              <div className="w-8 h-8 rounded-full bg-orange-50 border border-orange-100 shadow-sm overflow-hidden flex items-center justify-center shrink-0">
                {assigneeProfile?.photoURL ? (

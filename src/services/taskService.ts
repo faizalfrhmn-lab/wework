@@ -2,7 +2,41 @@ import { supabase } from '../lib/supabase';
 import { Task, SubTask, LibraryItem } from '../types';
 import { createBatchNotifications, createNotification } from './notificationService';
 
-export const createTask = async (orgId: string, folderId: string, title: string, category: string, note: string, members: string[], deadline: string, initialAmount: number = 0, assigneeId: string | null = null, creatorId: string) => {
+// Utilities to handle assigneeId when the database column is missing
+const serializeNote = (assigneeId: string | null, noteText: string | undefined): string => {
+  return JSON.stringify({ assigneeId, text: noteText || '' });
+};
+
+const parseNote = (rawNote: string | null): { assigneeId: string | null; text: string } => {
+  if (!rawNote) {
+    return { assigneeId: null, text: '' };
+  }
+  const trimmed = rawNote.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return {
+        assigneeId: parsed.assigneeId || null,
+        text: parsed.text || ''
+      };
+    } catch (e) {
+      // Fallback
+    }
+  }
+  return { assigneeId: null, text: rawNote };
+};
+
+const transformTask = (dbTask: any): Task => {
+  if (!dbTask) return dbTask;
+  const { assigneeId, text } = parseNote(dbTask.note);
+  return {
+    ...dbTask,
+    assigneeId: assigneeId || undefined,
+    note: text || ''
+  };
+};
+
+export const createTask = async (orgId: string, folderId: string, title: string, category: string, note: string, members: string[], deadline: string, initialAmount: number = 0, assigneeId: string | null = null, creatorId: string, creatorName: string = 'Seseorang') => {
   try {
     const safeMembers = Array.isArray(members) ? members : [];
     let finalMembers = [...new Set([...safeMembers, creatorId, ...(assigneeId ? [assigneeId] : [])])];
@@ -20,6 +54,7 @@ export const createTask = async (orgId: string, folderId: string, title: string,
       console.error('Error adding superadmins to task members:', e);
     }
     
+    const serializedNote = serializeNote(assigneeId, note);
     const { data, error } = await supabase
       .from('tasks')
       .insert({
@@ -28,13 +63,12 @@ export const createTask = async (orgId: string, folderId: string, title: string,
         members: finalMembers,
         title,
         category,
-        note,
+        note: serializedNote,
         initialAmount,
         amount: 0,
         deadline,
         status: 'todo',
         progress: 0,
-        assigneeId,
         createdAt: new Date().toISOString()
       })
       .select()
@@ -43,15 +77,27 @@ export const createTask = async (orgId: string, folderId: string, title: string,
     if (error) throw error;
     if (!data) throw new Error('Failed to create task: No data returned.');
 
-    // Notify all members about initial assignment/creation
-    const recipients = finalMembers.filter(m => m !== creatorId);
-    if (recipients.length > 0) {
-      createBatchNotifications(
-        recipients,
+    // Notify assignee specifically if not the creator
+    if (assigneeId && assigneeId !== creatorId) {
+      createNotification(
+        assigneeId,
         orgId,
         'task_assignment',
-        `New Task: ${title}`,
-        `A new task has been created in ${category}. Due: ${deadline}`,
+        `Tugas Baru Didelegasikan: ${title}`,
+        `${creatorName} telah menugaskan tugas "${title}" kepada Anda.`,
+        { view: 'folders', divisionId: folderId, taskId: data.id }
+      ).catch(err => console.error('Assignee notification error:', err));
+    }
+
+    // Notify all other members about task creation
+    const otherRecipients = finalMembers.filter(m => m !== creatorId && m !== assigneeId);
+    if (otherRecipients.length > 0) {
+      createBatchNotifications(
+        otherRecipients,
+        orgId,
+        'task_assignment',
+        `Tugas Baru: ${title}`,
+        `Tugas baru telah dibuat di divisi ${category}. Batas waktu: ${deadline}`,
         { view: 'folders', divisionId: folderId, taskId: data.id }
       ).catch(err => console.error('Silent notification error:', err));
     }
@@ -71,13 +117,9 @@ export const subscribeToTasks = (divisionId: string, userId: string, callback: (
         .select('*')
         .eq('folderId', divisionId);
       
-      if (!isAdmin) {
-        query = query.contains('members', [userId]);
-      }
-
       const { data, error } = await query;
       if (error) throw error;
-      if (data) callback(data as Task[]);
+      if (data) callback(data.map(transformTask));
     } catch (err) {
       console.error('Fetch tasks error:', err);
     }
@@ -154,9 +196,6 @@ export const subscribeToSubTasks = (taskId: string, userId: string, callback: (s
       .from('subtasks')
       .select('*')
       .eq('taskId', taskId);
-    if (!isAdmin) {
-      query = query.contains('members', [userId]);
-    }
     const { data } = await query;
     if (data) callback(data as SubTask[]);
   };
@@ -229,9 +268,6 @@ export const subscribeToLibraryItems = (divisionId: string, userId: string, call
       .from('task_links')
       .select('*')
       .eq('divisionId', divisionId);
-    if (!isAdmin) {
-      query = query.contains('members', [userId]);
-    }
     const { data } = await query;
     if (data) callback(data as LibraryItem[]);
   };
@@ -257,9 +293,6 @@ export const subscribeToLinksInFolder = (libraryFolderId: string, userId: string
       .from('task_links')
       .select('*')
       .eq('libraryFolderId', libraryFolderId);
-    if (!isAdmin) {
-      query = query.contains('members', [userId]);
-    }
     const { data } = await query;
     if (data) callback(data as LibraryItem[]);
   };
@@ -281,13 +314,14 @@ export const subscribeToLinksInFolder = (libraryFolderId: string, userId: string
 
 export const updateTaskStatus = async (taskId: string, status: string, userId: string) => {
   try {
-    const { data: task, error: fetchError } = await supabase
+    const { data: dbTask, error: fetchError } = await supabase
       .from('tasks')
       .select('*')
       .eq('id', taskId)
       .single();
     
     if (fetchError) throw fetchError;
+    const task = transformTask(dbTask);
 
     const updateData: any = { status };
     if (status === 'done') {
@@ -365,11 +399,8 @@ export const subscribeToOrgTasks = (orgId: string, userId: string, callback: (ta
       .from('tasks')
       .select('*')
       .eq('organizationId', orgId);
-    if (!isAdmin) {
-      query = query.contains('members', [userId]);
-    }
     const { data } = await query;
-    if (data) callback(data as Task[]);
+    if (data) callback(data.map(transformTask));
   };
 
   fetchTasks();
@@ -393,9 +424,6 @@ export const subscribeToOrgLinks = (orgId: string, userId: string, callback: (li
       .from('task_links')
       .select('*')
       .eq('organizationId', orgId);
-    if (!isAdmin) {
-      query = query.contains('members', [userId]);
-    }
     const { data } = await query;
     if (data) callback(data as LibraryItem[]);
   };
@@ -424,6 +452,53 @@ export const deleteTaskLink = async (linkId: string) => {
     if (error) throw error;
   } catch (error) {
     console.error('Delete task link error:', error);
+    throw error;
+  }
+};
+
+export const updateTaskAssignee = async (taskId: string, assigneeId: string | null, orgId: string, userId: string, senderName: string = 'Seseorang') => {
+  try {
+    const { data: dbTask, error: fetchError } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('id', taskId)
+      .single();
+    
+    if (fetchError) throw fetchError;
+
+    const { assigneeId: oldAssigneeId, text } = parseNote(dbTask.note);
+    if (oldAssigneeId === assigneeId) return; // No change
+
+    const serializedNote = serializeNote(assigneeId, text);
+    
+    let members = Array.isArray(dbTask.members) ? [...dbTask.members] : [];
+    if (assigneeId && !members.includes(assigneeId)) {
+      members.push(assigneeId);
+    }
+
+    const { error: updateError } = await supabase
+      .from('tasks')
+      .update({
+        note: serializedNote,
+        members
+      })
+      .eq('id', taskId);
+
+    if (updateError) throw updateError;
+
+    // Send assignment notification to the newly assigned user
+    if (assigneeId && assigneeId !== userId) {
+      await createNotification(
+        assigneeId,
+        orgId,
+        'task_assignment',
+        `Tugas Baru Didelegasikan`,
+        `${senderName} telah menugaskan tugas "${dbTask.title}" kepada Anda.`,
+        { view: 'folders', divisionId: dbTask.folderId, taskId: dbTask.id }
+      );
+    }
+  } catch (error) {
+    console.error('Update task assignee error:', error);
     throw error;
   }
 };

@@ -69,15 +69,13 @@ export const subscribeToMessages = (orgId: string, userId: string, divisionId: s
       .select('*')
       .eq('organizationId', orgId);
 
-    if (!isAdmin) {
-      query = query.contains('members', [userId]);
-    }
-
     query = query.order('createdAt', { ascending: true })
       .limit(100);
     
     if (divisionId) {
       query = query.eq('divisionId', divisionId);
+    } else {
+      query = query.is('divisionId', null);
     }
 
     const { data } = await query;
