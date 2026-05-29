@@ -66,6 +66,7 @@ interface TaskCardProps {
   task: Task;
   isSelected?: boolean;
   onCloseDetail?: () => void;
+  popupOnly?: boolean;
 }
 
 export default function TaskCard({
@@ -75,6 +76,7 @@ export default function TaskCard({
   task,
   isSelected,
   onCloseDetail,
+  popupOnly = false,
 }: TaskCardProps) {
   const [isDetailOpen, setIsDetailOpen] = useState(isSelected || false);
   const [isEditing, setIsEditing] = useState(false);
@@ -492,16 +494,18 @@ export default function TaskCard({
   return (
     <motion.div
       ref={cardRef}
-      layout
+      layout={!popupOnly}
       transition={{ layout: { duration: 0.2 } }}
-      className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group cursor-pointer relative ${
+      className={popupOnly ? "pointer-events-none border-none bg-transparent w-0 h-0 max-w-0 max-h-0 p-0 m-0 overflow-visible select-none" : `bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all group cursor-pointer relative ${
         isSelected
           ? "ring-4 ring-orange-500/30 border-orange-500 border-l-8 border-l-orange-500 shadow-2xl bg-orange-50/10 scale-[1.02]"
           : "border-gray-100"
       }`}
-      onClick={() => setIsDetailOpen(true)}
+      onClick={popupOnly ? undefined : () => setIsDetailOpen(true)}
     >
-      <AnimatePresence>
+      {!popupOnly && (
+        <>
+          <AnimatePresence>
         {showSuccess && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -650,6 +654,8 @@ export default function TaskCard({
           </div>
         </div>
       </div>
+      </>
+      )}
 
       <Modal
         isOpen={isDetailOpen}

@@ -539,19 +539,18 @@ export default function MainContent({
           const popupTask = allTasks.find(t => t.id === globalPopupTaskId);
           if (!popupTask) return null;
           return (
-            <div style={{ position: 'fixed', left: -9999, top: -9999, width: 1, height: 1, overflow: 'hidden' }}>
-              <TaskCard
-                key={`global-popup-${popupTask.id}`}
-                user={user}
-                profile={profile}
-                org={selectedOrg}
-                task={popupTask}
-                isSelected={true}
-                onCloseDetail={() => {
-                  setGlobalPopupTaskId(null);
-                }}
-              />
-            </div>
+            <TaskCard
+              key={`global-popup-${popupTask.id}`}
+              user={user}
+              profile={profile}
+              org={selectedOrg}
+              task={popupTask}
+              isSelected={true}
+              popupOnly={true}
+              onCloseDetail={() => {
+                setGlobalPopupTaskId(null);
+              }}
+            />
           );
         })()
       )}
