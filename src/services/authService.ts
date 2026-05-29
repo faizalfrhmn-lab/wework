@@ -117,6 +117,12 @@ export const subscribeToAuth = (callback: (user: any) => void) => {
       console.warn('Initial session lookup error:', error.message);
       if (error.message?.includes('Refresh Token') || error.message?.includes('refresh_token_not_found') || error.message?.includes('invalid_grant')) {
         supabase.auth.signOut().catch(() => {});
+        // Force cleanup of Supabase auth tokens
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-')) {
+            localStorage.removeItem(key);
+          }
+        });
       }
       callback(null);
       return;

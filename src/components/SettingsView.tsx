@@ -201,13 +201,8 @@ export default function SettingsView({ user, profile, org }: SettingsViewProps) 
             >
               <div className="space-y-6">
                 <div className="flex items-center gap-6">
-                  <div className="relative group">
-                    <div className="w-24 h-24 rounded-[2.5rem] bg-orange-500 overflow-hidden shadow-2xl shadow-orange-500/20">
-                      <img src={photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} alt="" referrerPolicy="no-referrer" />
-                    </div>
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-[2.5rem]">
-                      <Camera className="text-white w-6 h-6" />
-                    </div>
+                  <div className="w-24 h-24 rounded-[2.5rem] bg-orange-500 overflow-hidden shadow-2xl shadow-orange-500/20 shrink-0">
+                    <img src={photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <h3 className="text-xl font-black text-black">{profile?.displayName}</h3>
@@ -226,15 +221,35 @@ export default function SettingsView({ user, profile, org }: SettingsViewProps) 
                       className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm font-medium focus:ring-4 focus:ring-orange-500/10 focus:bg-white transition-all outline-none border border-black/5"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Photo URL</label>
-                    <input 
-                      type="url"
-                      value={photoURL}
-                      onChange={(e) => setPhotoURL(e.target.value)}
-                      className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm font-medium focus:ring-4 focus:ring-orange-500/10 focus:bg-white transition-all outline-none border border-black/5"
-                      placeholder="https://..."
-                    />
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Generate Avatar</label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const randomValue = Math.floor(Math.random() * 100000);
+                          const newUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=male_${randomValue}&topType=shortHair,shortHairCaesar,shortHairCaesarSidePart,shortHairCurly,shortHairDreads01,shortHairDreads02,shortHairFrizzle,shortHairShaggy,shortHairShortCurly,shortHairShortFlat,shortHairShortRound,shortHairShortWaved,shortHairSides&facialHairProbability=50&accessoriesProbability=10`;
+                          setPhotoURL(newUrl);
+                        }}
+                        className="flex flex-col items-center justify-center p-5 rounded-[2rem] border-2 border-dashed border-black/10 hover:border-black hover:bg-black/5 transition-all text-sm font-bold gap-2 select-none active:scale-95 group"
+                      >
+                        <span className="text-2xl group-hover:scale-110 transition-transform">👨</span>
+                        <span className="text-black">Generate Male</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const randomValue = Math.floor(Math.random() * 100000);
+                          const newUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=female_${randomValue}&topType=bob,curly,curlyReggae,dreads01,dreads02,fro,froBand,longHair,longHairCurly,longHairDreads,longHairFro,longHairFroBand,longHairMiaWallace,longHairNotTooLong,longHairWavy&facialHairProbability=0&accessoriesProbability=10`;
+                          setPhotoURL(newUrl);
+                        }}
+                        className="flex flex-col items-center justify-center p-5 rounded-[2rem] border-2 border-dashed border-black/10 hover:border-black hover:bg-black/5 transition-all text-sm font-bold gap-2 select-none active:scale-95 group"
+                      >
+                        <span className="text-2xl group-hover:scale-110 transition-transform">👩</span>
+                        <span className="text-black">Generate Female</span>
+                      </button>
+                    </div>
+                    <p className="text-gray-400 text-[10px] font-medium leading-relaxed mt-1">Tap Male or Female to generate custom random avatars. Remember to click "Save Changes" below to sync it across the space.</p>
                   </div>
                   <button 
                     type="submit"

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, ListTodo, X, ChevronLeft, ChevronRight, Minimize2, Maximize2, RefreshCw } from 'lucide-react';
+import { Editor, Toolbar, BtnBold, BtnItalic, BtnLink, BtnBulletList, BtnNumberedList, EditorProvider } from 'react-simple-wysiwyg';
 import { Task, UserProfile, Organization, AppUser } from '../types';
-import { subscribeToTasks, createTask } from '../services/taskService';
-import { getAllUsers } from '../services/authService';
+import { subscribeToTasks, createTask, addSubTask } from '../services/taskService';
+import { subscribeToUsersByIds } from '../services/authService';
 import TaskCard from './TaskCard';
 import Modal from './Modal';
 
@@ -14,6 +15,7 @@ interface TaskBoardProps {
   selectedTaskId?: string | null;
   isFocusMode: boolean;
   setIsFocusMode: (v: boolean) => void;
+  onClearSelectedTask?: () => void;
 }
 
 const getTodayDateString = () => {
@@ -24,18 +26,39 @@ const getTodayDateString = () => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
-export default function TaskBoard({ user, profile, org, divisionId, selectedTaskId, isFocusMode, setIsFocusMode }: TaskBoardProps) {
+export default function TaskBoard({ 
+  user, 
+  profile, 
+  org, 
+  divisionId, 
+  selectedTaskId, 
+  isFocusMode, 
+  setIsFocusMode,
+  onClearSelectedTask 
+}: TaskBoardProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
+
+  // Automatically expand the column containing the selectedTaskId if it is collapsed
+  useEffect(() => {
+    if (selectedTaskId && tasks.length > 0) {
+      const selectedTask = tasks.find(t => t.id === selectedTaskId);
+      if (selectedTask && selectedTask.status) {
+        setCollapsedColumns(prev => prev.filter(status => status !== selectedTask.status));
+      }
+    }
+  }, [selectedTaskId, tasks]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskNote, setNewTaskNote] = useState('');
   const [newTaskCategory, setNewTaskCategory] = useState('General');
   const [newTaskDeadline, setNewTaskDeadline] = useState(getTodayDateString());
   const [newTaskAmount, setNewTaskAmount] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [collapsedColumns, setCollapsedColumns] = useState<string[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
-  const [newTaskAssigneeId, setNewTaskAssigneeId] = useState<string>('');
+  const [newTaskAssigneeIds, setNewTaskAssigneeIds] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
+  const [subtasks, setSubtasks] = useState<{ title: string; initialAmount: number }[]>([]);
 
   useEffect(() => {
     if (!isModalOpen) {
@@ -44,11 +67,9 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
   }, [isModalOpen]);
 
   useEffect(() => {
-    if (profile?.role === 'superadmin') {
-      const unsub = getAllUsers(setAllUsers);
-      return unsub;
-    }
-  }, [profile]);
+    const unsub = subscribeToUsersByIds(org.members, setAllUsers);
+    return unsub;
+  }, [org.members]);
 
   useEffect(() => {
     const unsub = subscribeToTasks(divisionId, user.uid, setTasks, profile?.role === 'superadmin');
@@ -90,11 +111,11 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
         divisionId, 
         newTaskTitle.trim(), 
         newTaskCategory.trim(), 
-        '', 
+        newTaskNote.trim(), 
         org.members,
         deadlineVal,
         newTaskCategory.toLowerCase().includes('finance') ? newTaskAmount : 0,
-        newTaskAssigneeId || null,
+        newTaskAssigneeIds.length > 0 ? newTaskAssigneeIds : null,
         user.uid,
         profile?.displayName || user.displayName || user.email || 'Seseorang'
       );
@@ -103,11 +124,30 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
          throw new Error('Database denied entry. Check RLS or connection.');
       }
 
+      // Add subtasks if any were requested
+      if (subtasks.length > 0) {
+        for (const sub of subtasks) {
+          if (sub.title.trim()) {
+            await addSubTask(
+              org.id,
+              taskId,
+              org.members,
+              sub.title.trim(),
+              '', // description
+              '', // url
+              sub.initialAmount || 0
+            );
+          }
+        }
+      }
+
       setNewTaskTitle('');
+      setNewTaskNote('');
       setNewTaskCategory('General');
       setNewTaskDeadline(getTodayDateString());
       setNewTaskAmount(0);
-      setNewTaskAssigneeId('');
+      setNewTaskAssigneeIds([]);
+      setSubtasks([]);
       setIsModalOpen(false);
     } catch (err: any) {
       console.error('Task creation UI error:', err);
@@ -274,6 +314,11 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
                         org={org}
                         task={task} 
                         isSelected={task.id === selectedTaskId}
+                        onCloseDetail={() => {
+                          if (task.id === selectedTaskId && onClearSelectedTask) {
+                            onClearSelectedTask();
+                          }
+                        }}
                        />
                      ))}
                      
@@ -294,6 +339,7 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
       isOpen={isModalOpen} 
       onClose={() => setIsModalOpen(false)} 
       title="Create New Task"
+      maxWidth="max-w-2xl"
     >
       <form onSubmit={handleCreateTask} className="space-y-6">
         {formError && (
@@ -312,6 +358,25 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
             className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm font-medium focus:ring-4 focus:ring-orange-500/10 focus:bg-white transition-all outline-none"
             placeholder="e.g. Design Landing Page"
           />
+        </div>
+        <div className="space-y-2">
+          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Description / Note</label>
+          <div className="border border-gray-200 rounded-2xl overflow-hidden focus-within:ring-4 focus-within:ring-orange-500/10 focus-within:border-orange-500/30 transition-all bg-white">
+            <EditorProvider>
+              <Editor 
+                value={newTaskNote}
+                onChange={(e) => setNewTaskNote(e.target.value)}
+              >
+                <Toolbar>
+                  <BtnBold />
+                  <BtnItalic />
+                  <BtnLink />
+                  <BtnBulletList />
+                  <BtnNumberedList />
+                </Toolbar>
+              </Editor>
+            </EditorProvider>
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -351,19 +416,108 @@ export default function TaskBoard({ user, profile, org, divisionId, selectedTask
             />
           </div>
         )}
-        {profile?.role === 'superadmin' && allUsers.length > 0 && (
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Assign To User</label>
-            <select 
-              value={newTaskAssigneeId}
-              onChange={(e) => setNewTaskAssigneeId(e.target.value)}
-              className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm font-medium focus:ring-4 focus:ring-orange-500/10 focus:bg-white transition-all outline-none"
+
+        {/* Dynamic Subtask/Sub-todo Creation block */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Subtask / Sub-todo(s)</label>
+            <button
+              type="button"
+              onClick={() => setSubtasks(prev => [...prev, { title: '', initialAmount: 0 }])}
+              className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-orange-500 hover:text-orange-650 transition-all font-bold"
             >
-              <option value="">Self (Unassigned)</option>
-              {allUsers.map(u => (
-                <option key={u.id} value={u.id}>{u.displayName || u.email} ({u.role})</option>
+              <Plus className="w-3.5 h-3.5 animate-pulse" />
+              Add Subtask
+            </button>
+          </div>
+          
+          {subtasks.length > 0 && (
+            <div className="space-y-3 p-4 bg-gray-50 rounded-2xl border border-gray-100 max-h-60 overflow-y-auto no-scrollbar">
+              {subtasks.map((sub, index) => (
+                <div key={index} className="flex items-center gap-3">
+                  <input
+                    required
+                    type="text"
+                    value={sub.title}
+                    onChange={(e) => {
+                      const updated = [...subtasks];
+                      updated[index].title = e.target.value;
+                      setSubtasks(updated);
+                    }}
+                    placeholder={`Subtask #${index + 1} Name`}
+                    className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500/30 transition-all outline-none"
+                  />
+                  {newTaskCategory.toLowerCase().includes('finance') && (
+                    <input
+                      type="number"
+                      value={sub.initialAmount || ''}
+                      onChange={(e) => {
+                        const updated = [...subtasks];
+                        updated[index].initialAmount = Number(e.target.value);
+                        setSubtasks(updated);
+                      }}
+                      placeholder="Amount"
+                      className="w-32 bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500/30 transition-all outline-none"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSubtasks(prev => prev.filter((_, idx) => idx !== index));
+                    }}
+                    className="p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                    title="Delete Subtask"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               ))}
-            </select>
+            </div>
+          )}
+        </div>
+
+        {allUsers.length > 0 && (
+          <div className="space-y-3">
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Assign To Users</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-gray-50/50 p-3 rounded-2xl border border-gray-100 max-h-48 overflow-y-auto no-scrollbar">
+              {allUsers.map(u => {
+                const isSelected = newTaskAssigneeIds.includes(u.id);
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => {
+                      if (isSelected) {
+                        setNewTaskAssigneeIds(prev => prev.filter(id => id !== u.id));
+                      } else {
+                        setNewTaskAssigneeIds(prev => [...prev, u.id]);
+                      }
+                    }}
+                    className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-left transition-all ${
+                      isSelected
+                        ? 'bg-orange-500/10 border-orange-500/30 text-orange-950 font-semibold'
+                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${
+                      isSelected
+                        ? 'bg-orange-500 border-orange-500 text-white'
+                        : 'border-gray-300 bg-white'
+                    }`}>
+                      {isSelected && (
+                        <svg className="w-2.5 h-2.5 stroke-[3]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </div>
+                    <span className="text-xs truncate">{u.displayName || u.email}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {newTaskAssigneeIds.length === 0 && (
+              <p className="text-[11px] text-gray-400 italic">No one assigned yet. Defaults to self / unassigned.</p>
+            )}
           </div>
         )}
         <button 

@@ -231,7 +231,7 @@ export default function UsersView({ currentProfile }: UsersViewProps) {
                               {user.photoURL ? (
                                 <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
                               ) : (
-                                <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName || user.email}`} alt="" />
+                                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`} alt="" className="w-full h-full object-cover" />
                               )}
                             </div>
                             <div className="min-w-0 max-w-[180px]">
@@ -339,7 +339,7 @@ export default function UsersView({ currentProfile }: UsersViewProps) {
               {editPhotoURL ? (
                 <img src={editPhotoURL} alt="Preview" className="w-full h-full object-cover" />
               ) : (
-                <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${editDisplayName || editEmail}`} alt="Fallback" />
+                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedUserForEdit?.id || 'edit-fallback'}`} alt="Fallback" className="w-full h-full object-cover" />
               )}
               <label 
                 htmlFor="edit-avatar-upload" 

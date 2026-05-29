@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Organization, Folder, UserProfile, Task, LibraryItem, AppUser } from '../types';
 import { createOrganization } from '../services/orgService';
 import { subscribeToOrgTasks, subscribeToOrgLinks } from '../services/taskService';
-import { Building2, Plus, Search, X, Tag, ChevronRight, FileText, ExternalLink, ChevronUp, ChevronDown, Menu, Folder as FolderIcon, MessageSquare, BarChart3, Users } from 'lucide-react';
+import { subscribeToNotifications } from '../services/notificationService';
+import { Building2, Plus, Search, X, Tag, ChevronRight, FileText, ExternalLink, ChevronUp, ChevronDown, Menu, Folder as FolderIcon, MessageSquare, BarChart3, Users, BellRing, Sparkles } from 'lucide-react';
 import FoldersView from './FoldersView';
 import ChatView from './ChatView';
 import DashboardView from './DashboardView';
@@ -12,6 +13,7 @@ import UsersView from './UsersView';
 import SpaceMembersView from './SpaceMembersView';
 import Modal from './Modal';
 import NotificationBell from './NotificationBell';
+import TaskCard from './TaskCard';
 
 interface MainContentProps {
   user: AppUser;
@@ -42,11 +44,59 @@ export default function MainContent({
   const [newOrgName, setNewOrgName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [globalPopupTaskId, setGlobalPopupTaskId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [allLinks, setAllLinks] = useState<LibraryItem[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const [activeToast, setActiveToast] = useState<{ title: string; message: string; taskId?: string; divisionId?: string; scrollToComments?: boolean } | null>(null);
+
+  // Auto-clear active toast banner
+  useEffect(() => {
+    if (activeToast) {
+      const timer = setTimeout(() => {
+        setActiveToast(null);
+      }, 7000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeToast]);
+
+  // Real-time notification automatic popup opener (No aggressive page refocusing!)
+  useEffect(() => {
+    if (user && selectedOrg) {
+      const unsub = subscribeToNotifications(user.uid, () => {}, (newNotif) => {
+        let linkObj: any = null;
+        if (newNotif.link) {
+          try {
+            linkObj = typeof newNotif.link === 'string' ? JSON.parse(newNotif.link) : newNotif.link;
+          } catch (e) {
+            console.error('Failed to parse real-time link:', e);
+          }
+        }
+
+        // Triggered on any real-time INSERT of task-related notification where the user is NOT the creator
+        if (
+          linkObj && 
+          linkObj.divisionId && 
+          linkObj.taskId
+        ) {
+          const mustScroll = linkObj.scrollTo === 'comments';
+          // DO NOT hijack user view on insert! Just show the toast so they are informed.
+          
+          // Display a gorgeous real-time float toast for UX confirmation
+          setActiveToast({
+            title: newNotif.title,
+            message: newNotif.message,
+            taskId: linkObj.taskId,
+            divisionId: linkObj.divisionId,
+            scrollToComments: mustScroll
+          });
+        }
+      });
+      return unsub;
+    }
+  }, [user, selectedOrg]);
 
   const handleCreateOrg = async (e: FormEvent) => {
     e.preventDefault();
@@ -82,7 +132,7 @@ export default function MainContent({
     ? allLinks.filter(l => l.label.toLowerCase().includes(searchQuery.toLowerCase()))
     : [];
 
-  const handleNavigateToTask = (divisionId: string, taskId: string, orgId?: string) => {
+  const handleNavigateToTask = (divisionId: string, taskId: string, orgId?: string, scrollToComments?: boolean) => {
     if (orgId && setSelectedOrgId && selectedOrg?.id !== orgId) {
       setSelectedOrgId(orgId);
     }
@@ -91,6 +141,25 @@ export default function MainContent({
     setActiveView('folders');
     setShowSearchResults(false);
     setSearchQuery('');
+
+    if (scrollToComments) {
+      (window as any).__scrollToComments = true;
+    } else {
+      (window as any).__scrollToComments = false;
+    }
+  };
+
+  const handleShowTaskPopupOnly = (divisionId: string, taskId: string, orgId?: string, scrollToComments?: boolean) => {
+    if (orgId && setSelectedOrgId && selectedOrg?.id !== orgId) {
+      setSelectedOrgId(orgId);
+    }
+    setGlobalPopupTaskId(taskId);
+
+    if (scrollToComments) {
+      (window as any).__scrollToComments = true;
+    } else {
+      (window as any).__scrollToComments = false;
+    }
   };
 
   const handleNavigateToChat = (divisionId?: string, orgId?: string) => {
@@ -252,7 +321,7 @@ export default function MainContent({
           <div className="hidden md:flex items-center gap-4 shrink-0">
              <NotificationBell 
                userId={user.uid} 
-               onNavigateToTask={handleNavigateToTask}
+               onNavigateToTask={handleShowTaskPopupOnly}
                onNavigateToChat={handleNavigateToChat}
              />
              <button 
@@ -338,6 +407,7 @@ export default function MainContent({
                 onNavigateToTask={handleNavigateToTask}
                 isFocusMode={isFocusMode}
                 setIsFocusMode={setIsFocusMode}
+                onClearSelectedTask={() => setSelectedTaskId(null)}
               />
             </motion.div>
           )}
@@ -354,7 +424,7 @@ export default function MainContent({
                 profile={profile} 
                 org={selectedOrg} 
                 divisionId={selectedDivisionId || undefined}
-                onNavigateToTask={handleNavigateToTask} 
+                onNavigateToTask={handleShowTaskPopupOnly} 
               />
             </motion.div>
           )}
@@ -371,7 +441,7 @@ export default function MainContent({
                 profile={profile} 
                 org={selectedOrg} 
                 divisionId={undefined}
-                onNavigateToTask={handleNavigateToTask} 
+                onNavigateToTask={handleShowTaskPopupOnly} 
               />
             </motion.div>
           )}
@@ -421,6 +491,70 @@ export default function MainContent({
           )}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {activeToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, scale: 1, x: "-50%" }}
+            exit={{ opacity: 0, y: 50, scale: 0.9, x: "-50%" }}
+            style={{ left: "50%" }}
+            onClick={() => {
+              if (activeToast.divisionId && activeToast.taskId && selectedOrg) {
+                handleShowTaskPopupOnly(activeToast.divisionId, activeToast.taskId, selectedOrg.id, activeToast.scrollToComments);
+                setActiveToast(null);
+              }
+            }}
+            className="fixed bottom-8 bg-white/95 backdrop-blur-md rounded-[2rem] p-5 shadow-2xl border border-black/5 flex items-center gap-4 z-[999] max-w-md w-[85%] md:w-[420px] cursor-pointer hover:border-orange-500/30 transition-all active:scale-95"
+          >
+            <div className="w-11 h-11 rounded-2xl bg-orange-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/20">
+              <BellRing className="w-5 h-5 animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0 pr-1">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-[9px] font-black uppercase tracking-wider text-orange-500">
+                  {activeToast.scrollToComments ? "Sebutan / Mention Baru!" : "Tugas Baru Dipopup!"}
+                </span>
+                <Sparkles className="w-3 h-3 text-orange-500 fill-orange-500 animate-pulse" />
+              </div>
+              <h6 className="text-xs font-black text-gray-900 truncate leading-tight">{activeToast.title}</h6>
+              <p className="text-[10px] font-medium text-gray-500 truncate leading-relaxed mt-0.5">{activeToast.message}</p>
+            </div>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveToast(null);
+              }}
+              className="p-2 hover:bg-gray-100 rounded-xl text-gray-400 hover:text-black transition-colors cursor-pointer shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Global Non-Disruptive Task Detail Popup Modal */}
+      {globalPopupTaskId && (
+        (() => {
+          const popupTask = allTasks.find(t => t.id === globalPopupTaskId);
+          if (!popupTask) return null;
+          return (
+            <div style={{ position: 'fixed', left: -9999, top: -9999, width: 1, height: 1, overflow: 'hidden' }}>
+              <TaskCard
+                key={`global-popup-${popupTask.id}`}
+                user={user}
+                profile={profile}
+                org={selectedOrg}
+                task={popupTask}
+                isSelected={true}
+                onCloseDetail={() => {
+                  setGlobalPopupTaskId(null);
+                }}
+              />
+            </div>
+          );
+        })()
+      )}
     </div>
   );
 }

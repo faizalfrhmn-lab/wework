@@ -2,5 +2,5 @@
   "name": "Enterprise Task \u0026 Communication Hub",
   "description": "A multi-tenant organizational manager featuring hierarchical task tracking, real-time group chat, and folder-level link aggregation.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

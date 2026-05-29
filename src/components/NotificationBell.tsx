@@ -6,7 +6,7 @@ import { subscribeToNotifications, markAsRead, markAllAsRead } from '../services
 
 interface NotificationBellProps {
   userId: string;
-  onNavigateToTask: (divisionId: string, taskId: string, orgId?: string) => void;
+  onNavigateToTask: (divisionId: string, taskId: string, orgId?: string, scrollToComments?: boolean) => void;
   onNavigateToChat: (divisionId?: string, orgId?: string) => void;
 }
 
@@ -35,11 +35,20 @@ export default function NotificationBell({ userId, onNavigateToTask, onNavigateT
     markAsRead(n.id);
     setIsOpen(false);
     
+    let linkObj: any = null;
     if (n.link) {
-      if (n.link.view === 'folders' && n.link.divisionId && n.link.taskId) {
-        onNavigateToTask(n.link.divisionId, n.link.taskId, n.orgId);
-      } else if (n.link.view === 'chat') {
-        onNavigateToChat(n.link.divisionId, n.orgId);
+      try {
+        linkObj = typeof n.link === 'string' ? JSON.parse(n.link) : n.link;
+      } catch (e) {
+        console.error('Failed to parse notification link:', e);
+      }
+    }
+    
+    if (linkObj) {
+      if (linkObj.divisionId && linkObj.taskId) {
+        onNavigateToTask(linkObj.divisionId, linkObj.taskId, n.orgId, linkObj.scrollTo === 'comments');
+      } else if (linkObj.view === 'chat') {
+        onNavigateToChat(linkObj.divisionId, n.orgId);
       }
     }
   };

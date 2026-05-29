@@ -229,7 +229,7 @@ export default function SpaceMembersView({ user, profile, org }: SpaceMembersVie
                                   />
                                 ) : (
                                   <img 
-                                    src={`https://api.dicebear.com/7.x/initials/svg?seed=${member.displayName || member.email}`} 
+                                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${member.id}`} 
                                     alt="" 
                                     className="w-full h-full object-cover"
                                   />
@@ -344,9 +344,7 @@ export default function SpaceMembersView({ user, profile, org }: SpaceMembersVie
                       {item.photoURL ? (
                         <img src={item.photoURL} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-full h-full bg-gray-100 flex items-center justify-center font-bold text-gray-500 text-xs">
-                          {item.displayName ? item.displayName[0].toUpperCase() : item.email[0].toUpperCase()}
-                        </div>
+                        <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${item.id}`} alt="" className="w-full h-full object-cover" />
                       )}
                     </div>
                     <div className="min-w-0">

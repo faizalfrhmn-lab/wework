@@ -38,3 +38,73 @@
   transform: rotate(180deg);
 }
 
+/* Custom styling for react-simple-wysiwyg */
+.rsw-editor {
+  border: none !important;
+  background-color: transparent !important;
+  font-family: inherit !important;
+}
+
+.rsw-toolbar {
+  background-color: #f9fafb !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  padding: 10px 14px !important;
+  display: flex !important;
+  gap: 6px !important;
+  border-radius: 0 !important;
+}
+
+.rsw-ce {
+  min-height: 200px !important; /* Ensure nice big area to write in! */
+  padding: 16px !important;
+  background-color: #ffffff !important;
+  outline: none !important;
+  font-size: 0.875rem !important;
+  line-height: 1.6 !important;
+  color: #1f2937 !important;
+  border-radius: 0 !important;
+}
+
+.rsw-ce ul {
+  list-style-type: disc !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.rsw-ce ol {
+  list-style-type: decimal !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.rsw-ce li {
+  display: list-item !important;
+  margin-top: 0.25rem !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.rsw-btn {
+  border-radius: 8px !important;
+  border: 1px solid transparent !important;
+  padding: 6px 10px !important;
+  color: #4b5563 !important;
+  cursor: pointer !important;
+  font-weight: 600 !important;
+  transition: all 0.2s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.rsw-btn:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.rsw-btn[data-active="true"] {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+

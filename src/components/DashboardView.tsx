@@ -175,7 +175,7 @@ export default function DashboardView({ user, profile, org }: DashboardViewProps
                        dataKey="name" 
                        axisLine={false} 
                        tickLine={false} 
-                       tick={{ fontSize: 10, fontWeight: 800, fill: '#9ca3af', textTransform: 'uppercase' }} 
+                       tick={{ fontSize: 10, fontWeight: 800, fill: '#9ca3af' }} 
                      />
                      <YAxis 
                        hide 

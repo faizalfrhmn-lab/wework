@@ -57,7 +57,11 @@ export const createBatchNotifications = async (
   }
 };
 
-export const subscribeToNotifications = (userId: string, callback: (notifications: AppNotification[]) => void) => {
+export const subscribeToNotifications = (
+  userId: string, 
+  callback: (notifications: AppNotification[]) => void,
+  onNewNotification?: (notification: AppNotification) => void
+) => {
   const fetchNotifications = async () => {
     const { data } = await supabase
       .from('notifications')
@@ -78,7 +82,10 @@ export const subscribeToNotifications = (userId: string, callback: (notification
       schema: 'public', 
       table: 'notifications', 
       filter: `userId=eq.${userId}` 
-    }, () => {
+    }, (payload) => {
+      if (payload.eventType === 'INSERT' && onNewNotification && payload.new) {
+        onNewNotification(payload.new as AppNotification);
+      }
       fetchNotifications();
     })
     .subscribe();

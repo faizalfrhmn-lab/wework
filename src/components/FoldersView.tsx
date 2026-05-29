@@ -28,6 +28,7 @@ interface FoldersViewProps {
   onNavigateToTask: (divisionId: string, taskId: string) => void;
   isFocusMode: boolean;
   setIsFocusMode: (v: boolean) => void;
+  onClearSelectedTask?: () => void;
 }
 
 export default function FoldersView({ 
@@ -39,7 +40,8 @@ export default function FoldersView({
   selectedTaskId,
   onNavigateToTask,
   isFocusMode,
-  setIsFocusMode
+  setIsFocusMode,
+  onClearSelectedTask
 }: FoldersViewProps) {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [activeSubView, setActiveSubView] = useState<'tasks' | 'library' | 'chat'>('tasks');
@@ -403,6 +405,7 @@ export default function FoldersView({
                       selectedTaskId={selectedTaskId}
                       isFocusMode={isFocusMode}
                       setIsFocusMode={setIsFocusMode}
+                      onClearSelectedTask={onClearSelectedTask}
                     />
                   </motion.div>
                 ) : activeSubView === 'library' ? (

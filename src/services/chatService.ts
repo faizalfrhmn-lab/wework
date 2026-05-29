@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { Message } from '../types';
+import { Message, UserProfile } from '../types';
 import { createBatchNotifications } from './notificationService';
 
 export const sendMessage = async (
@@ -8,6 +8,7 @@ export const sendMessage = async (
   userName: string, 
   text: string, 
   members: string[],
+  spaceMembers: UserProfile[],
   divisionId: string | null = null,
   taggedTaskId: string | null = null,
   taggedTaskDivisionId: string | null = null,
@@ -45,16 +46,37 @@ export const sendMessage = async (
     
     if (error) throw error;
 
-    // Notify other members
-    const recipientIds = members.filter(m => m !== userId);
+    // Detect mentions
+    const mentionedUserIds = spaceMembers
+      .filter(member => {
+        const displayName = member.displayName || member.email;
+        return text.includes(`@${displayName}`);
+      })
+      .map(member => member.id);
+
+    // Notify defined recipients
+    const recipientIds = (mentionedUserIds.length > 0 ? mentionedUserIds : members)
+      .filter(m => m !== userId);
+      
     if (recipientIds.length > 0) {
+      const isTaskComment = !!taggedTaskId;
+      const notificationTitle = isTaskComment
+        ? `${userName} menyebut Anda di tugas: ${taggedTaskTitle}`
+        : `Pesan Baru dari ${userName}`;
+      
+      const notificationMessage = isTaskComment
+        ? text
+        : (text.length > 50 ? text.substring(0, 47) + '...' : text);
+
       await createBatchNotifications(
         recipientIds,
         orgId,
-        'message',
-        `New Message from ${userName}`,
-        text.length > 50 ? text.substring(0, 47) + '...' : text,
-        { view: 'chat', divisionId: divisionId || undefined }
+        isTaskComment ? 'task_assignment' : 'message',
+        notificationTitle,
+        notificationMessage,
+        isTaskComment
+          ? { view: 'folders', divisionId: divisionId || undefined, taskId: taggedTaskId, scrollTo: 'comments' }
+          : { view: 'chat', divisionId: divisionId || undefined }
       );
     }
   } catch (error) {
@@ -96,3 +118,77 @@ export const subscribeToMessages = (orgId: string, userId: string, divisionId: s
     supabase.removeChannel(channel);
   };
 };
+
+export const clearChatMessages = async (orgId: string, divisionId: string | null) => {
+  try {
+    let query = supabase
+      .from('messages')
+      .delete()
+      .eq('organizationId', orgId);
+
+    if (divisionId) {
+      query = query.eq('divisionId', divisionId);
+    } else {
+      query = query.is('divisionId', null);
+    }
+
+    const { error } = await query;
+    if (error) throw error;
+  } catch (error) {
+    console.error('Clear messages error:', error);
+    throw error;
+  }
+};
+
+export const unsendMessage = async (messageId: string) => {
+  try {
+    const { error } = await supabase
+      .from('messages')
+      .delete()
+      .eq('id', messageId);
+      
+    if (error) throw error;
+  } catch (error) {
+    console.error('Unsend message error:', error);
+    throw error;
+  }
+};
+
+export const subscribeToTaskComments = (
+  taskId: string,
+  callback: (messages: Message[]) => void
+) => {
+  const fetchTaskComments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('taggedTaskId', taskId)
+        .order('createdAt', { ascending: true });
+        
+      if (error) throw error;
+      if (data) callback(data as Message[]);
+    } catch (err) {
+      console.error('Fetch task comments error:', err);
+    }
+  };
+
+  fetchTaskComments();
+
+  const channelId = `task_comments_${taskId}_${Math.random().toString(36).substring(7)}`;
+  const channel = supabase
+    .channel(channelId)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'messages', filter: `taggedTaskId=eq.${taskId}` },
+      () => {
+        fetchTaskComments();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+};
+

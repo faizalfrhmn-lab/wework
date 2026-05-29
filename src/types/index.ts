@@ -73,6 +73,7 @@ export interface Task {
   amount?: number; // Total revenue from sub-tasks
   status: TaskStatus;
   assigneeId?: string;
+  assigneeIds?: string[];
   deadline: string;
   progress: number;
   completedAt?: any;
@@ -130,6 +131,7 @@ export interface AppNotification {
     view: 'folders' | 'chat' | 'dashboard';
     divisionId?: string;
     taskId?: string;
+    scrollTo?: 'comments';
   };
   read: boolean;
   createdAt: any;
