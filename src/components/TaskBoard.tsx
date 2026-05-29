@@ -55,6 +55,7 @@ export default function TaskBoard({
   const [newTaskAmount, setNewTaskAmount] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [collapsedColumns, setCollapsedColumns] = useState<string[]>([]);
+  const [showOnlyMyTasks, setShowOnlyMyTasks] = useState(false);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [newTaskAssigneeIds, setNewTaskAssigneeIds] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
@@ -198,7 +199,7 @@ export default function TaskBoard({
                 <RefreshCw className="w-3.5 h-3.5" />
              </button>
 
-             <button 
+              <button 
                 onClick={() => setIsFocusMode(!isFocusMode)}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
                   isFocusMode 
@@ -208,6 +209,16 @@ export default function TaskBoard({
              >
                 {isFocusMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
                 {isFocusMode ? 'Exit focus' : 'Focus view'}
+             </button>
+             <button 
+                onClick={() => setShowOnlyMyTasks(!showOnlyMyTasks)}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
+                  showOnlyMyTasks
+                    ? 'bg-orange-500 text-white shadow-xl' 
+                    : isFocusMode ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                }`}
+             >
+                {showOnlyMyTasks ? 'Showing My Tasks' : 'Show My Tasks Only'}
              </button>
           </div>
           <div className="flex items-center gap-4">
@@ -221,7 +232,11 @@ export default function TaskBoard({
           <div className="flex gap-6 h-full min-w-max items-start">
             {categories.map((status) => {
               const isCollapsed = collapsedColumns.includes(status);
-              const columnTasks = tasks.filter(t => t.status === status);
+              const columnTasks = tasks.filter(t => {
+                const isStatusMatch = t.status === status;
+                const isAssigned = showOnlyMyTasks ? (t.assigneeId === user.uid || t.assigneeIds?.includes(user.uid)) : true;
+                return isStatusMatch && isAssigned;
+              });
               
               if (isCollapsed) {
                 return (

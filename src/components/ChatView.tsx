@@ -23,6 +23,7 @@ export default function ChatView({ user, profile, org, divisionId, divisionName:
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [taggedTask, setTaggedTask] = useState<Task | null>(null);
   const [showTaskPicker, setShowTaskPicker] = useState(false);
+  const [taskSearchQuery, setTaskSearchQuery] = useState('');
   const [showUserPicker, setShowUserPicker] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -244,13 +245,22 @@ export default function ChatView({ user, profile, org, divisionId, divisionName:
           >
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-black uppercase tracking-widest text-gray-900">Tag a Task</h3>
-              <button onClick={() => setShowTaskPicker(false)} className="p-2 hover:bg-gray-100 rounded-full">
+              <button onClick={() => { setShowTaskPicker(false); setTaskSearchQuery(''); }} className="p-2 hover:bg-gray-100 rounded-full">
                 <X className="w-5 h-5 text-gray-400" />
               </button>
             </div>
+            <div className="p-4 border-b border-gray-100">
+              <input
+                type="text"
+                placeholder="Search tasks..."
+                value={taskSearchQuery}
+                onChange={(e) => setTaskSearchQuery(e.target.value)}
+                className="w-full bg-gray-50 border-none rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:ring-4 focus:ring-orange-500/10 transition-all text-black"
+              />
+            </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {allTasks.length > 0 ? (
-                allTasks.map(t => (
+              {allTasks.filter(t => t.title.toLowerCase().includes(taskSearchQuery.toLowerCase())).length > 0 ? (
+                allTasks.filter(t => t.title.toLowerCase().includes(taskSearchQuery.toLowerCase())).map(t => (
                   <button
                     key={t.id}
                     onClick={() => {

@@ -314,6 +314,9 @@ export default function TaskCard({
     profile?.role === "manager" ||
     profile?.role === "superadmin" ||
     org.managerId === user.uid;
+  const isSuperadmin = profile?.role === "superadmin";
+
+  const canApprove = isSuperadmin || (isManager && task.createdBy === user.uid);
   const isRevenueEnabled =
     org.settings?.revenueEnabledDivisions?.includes(task.folderId) ||
     org.settings?.revenueEnabledCategories?.includes(task.category || "");
@@ -447,7 +450,7 @@ export default function TaskCard({
             <RotateCcw className="w-3 h-3" />
             Revision
           </button>
-          {isManager && (
+          {canApprove && (
             <button
               disabled={disabled}
               onClick={(e) => {
@@ -1213,56 +1216,7 @@ export default function TaskCard({
             <StatusButtons disabled={false} />
           </div>
 
-          {/* Flow Approval Controls inside Modal */}
-          {profile?.role === "superadmin" && task.status === "review" && (
-            <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-100 flex items-center justify-between gap-4 mt-4">
-              <span className="text-[10px] font-black uppercase tracking-widest text-orange-600">
-                Review Request
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={false}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleStatusUpdate("revision");
-                  }}
-                  className="px-4 py-2 bg-red-100 text-red-700 rounded-xl text-xs font-bold hover:bg-red-200 transition-colors cursor-pointer"
-                >
-                  Reject
-                </button>
-                <button
-                  type="button"
-                  disabled={false}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleStatusUpdate("done");
-                  }}
-                  className="px-4 py-2 bg-green-500 text-white rounded-xl text-xs font-bold hover:bg-green-600 transition-colors cursor-pointer"
-                >
-                  Approve
-                </button>
-              </div>
-            </div>
-          )}
-          {profile?.role !== "superadmin" && task.status === "in-progress" && (
-            <div className="p-4 bg-gray-50 rounded-2xl border border-black/5 flex justify-between items-center mt-4">
-              <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-                Submit Work
-              </span>
-              <button
-                type="button"
-                disabled={false}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleStatusUpdate("review");
-                }}
-                className="px-6 py-2 bg-black text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-colors cursor-pointer"
-              >
-                Submit for Review
-              </button>
-            </div>
-          )}
+
 
           {/* Comments & Activity Section */}
           <div ref={commentsSectionRef} className="border-t border-gray-100 pt-6 space-y-4 transition-all duration-500">

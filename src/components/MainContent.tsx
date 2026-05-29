@@ -354,7 +354,7 @@ export default function MainContent({
                   className={`flex items-center gap-2 px-4.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-300 relative cursor-pointer outline-none border border-transparent ${
                     isActive 
                       ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/10 scale-[1.02]' 
-                      : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100/60'
+                      : isFocusMode ? 'text-white/70 hover:text-white hover:bg-white/20' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100/60'
                   }`}
                   style={{ touchAction: 'manipulation' }}
                 >

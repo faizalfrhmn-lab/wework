@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Users, Shield, User, Mail, Calendar, CheckCircle2, AlertCircle, Trash2, Key, Lock, MoreVertical, Camera } from 'lucide-react';
+import { Users, Shield, User, Mail, Calendar, CheckCircle2, AlertCircle, Trash2, Key, Lock, MoreVertical, Camera, UserPlus, Search } from 'lucide-react';
 import { UserProfile } from '../types';
 import { getAllUsers, updateUserProfile, deleteUserProfile } from '../services/authService';
 import { ensureSuperadminMemberships } from '../services/orgService';
@@ -18,6 +18,7 @@ export default function UsersView({ currentProfile }: UsersViewProps) {
   const [isUpdatingPassword, setIsUpdatingPassword] = useState<{[userId: string]: boolean}>({});
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isAddingUser, setIsAddingUser] = useState(false);
 
   // States for Profile detail editor Modal
   const [selectedUserForEdit, setSelectedUserForEdit] = useState<UserProfile | null>(null);
@@ -168,19 +169,39 @@ export default function UsersView({ currentProfile }: UsersViewProps) {
             <p className="text-gray-400 font-medium tracking-tight text-sm">Full list of registered workspace members. Only Superadmins can update attributes.</p>
           </div>
           
-          {/* Search bar & statistics */}
-          <div className="relative w-full md:w-80 shrink-0">
-            <input
-              type="text"
-              placeholder="Cari nama atau email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white border border-black/5 rounded-2xl px-5 py-3 text-xs font-bold outline-none focus:ring-4 focus:ring-orange-500/10 transition-all text-black pr-10 shadow-sm"
-            />
-            <Users className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <div className="flex items-center gap-3 self-start md:self-auto">
+            {currentProfile?.role === 'superadmin' && (
+              <button 
+                onClick={() => setIsAddingUser(true)}
+                className="px-5 py-3.5 bg-black text-white hover:bg-orange-500 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all duration-300 flex items-center gap-2.5 shadow-lg active:scale-95 cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                Tambah Anggota
+              </button>
+            )}
           </div>
         </div>
 
+        {/* Search controls */}
+        <div className="flex items-center justify-between gap-4 bg-white p-3 rounded-[2rem] border border-black/5 shadow-sm">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="Cari anggota dengan nama atau email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 text-xs font-bold outline-none focus:ring-4 focus:ring-orange-500/10 transition-all text-black pr-10"
+            />
+            <Search className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+          
+          <div className="hidden sm:flex items-center gap-2 bg-gray-50 px-5 py-3.5 rounded-2xl select-none">
+            <Users className="w-4 h-4 text-orange-500" />
+            <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
+              Total {filteredUsers.length} Anggota
+            </span>
+          </div>
+        </div>
         {message && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -324,6 +345,22 @@ export default function UsersView({ currentProfile }: UsersViewProps) {
               {isDeleting ? 'Menghapus...' : 'Ya, Hapus'}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isAddingUser}
+        onClose={() => setIsAddingUser(false)}
+        title="Tambah Anggota Baru"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-gray-500">Fitur ini memerlukan integrasi backend untuk membuat auth user secara aman.</p>
+           <button
+              onClick={() => setIsAddingUser(false)}
+              className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-2xl transition-all"
+            >
+              Tutup
+            </button>
         </div>
       </Modal>
 

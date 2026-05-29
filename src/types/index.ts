@@ -78,6 +78,7 @@ export interface Task {
   progress: number;
   completedAt?: any;
   createdAt: any;
+  createdBy?: string; 
 }
 
 export interface LibraryFolder {

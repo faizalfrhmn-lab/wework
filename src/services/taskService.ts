@@ -40,7 +40,8 @@ const transformTask = (dbTask: any): Task => {
     ...dbTask,
     assigneeId: assigneeId || undefined,
     assigneeIds: assigneeIds || [],
-    note: text || ''
+    note: text || '',
+    createdBy: dbTask.createdBy // Add this line
   };
 };
 
@@ -79,7 +80,8 @@ export const createTask = async (orgId: string, folderId: string, title: string,
         deadline,
         status: 'todo',
         progress: 0,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        createdBy: creatorId
       })
       .select()
       .single();
