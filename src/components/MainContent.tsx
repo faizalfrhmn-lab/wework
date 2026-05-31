@@ -4,10 +4,11 @@ import { Organization, Folder, UserProfile, Task, LibraryItem, AppUser } from '.
 import { createOrganization } from '../services/orgService';
 import { subscribeToOrgTasks, subscribeToOrgLinks } from '../services/taskService';
 import { subscribeToNotifications } from '../services/notificationService';
-import { Building2, Plus, Search, X, Tag, ChevronRight, FileText, ExternalLink, ChevronUp, ChevronDown, Menu, Folder as FolderIcon, MessageSquare, BarChart3, Users, BellRing, Sparkles } from 'lucide-react';
+import { Building2, Plus, Search, X, Tag, ChevronRight, FileText, ExternalLink, ChevronUp, ChevronDown, Menu, Folder as FolderIcon, MessageSquare, BarChart3, Users, BellRing, Sparkles, Zap } from 'lucide-react';
 import FoldersView from './FoldersView';
 import ChatView from './ChatView';
 import DashboardView from './DashboardView';
+import KpiDashboardView from './KpiDashboardView';
 import SettingsView from './SettingsView';
 import UsersView from './UsersView';
 import SpaceMembersView from './SpaceMembersView';
@@ -20,7 +21,7 @@ interface MainContentProps {
   profile: UserProfile | null;
   selectedOrg: Organization | undefined;
   setSelectedOrgId?: (id: string | null) => void;
-  activeView: 'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings' | 'users' | 'space-members';
+  activeView: 'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings' | 'users' | 'space-members' | 'kpi-dashboard';
   setActiveView: (view: any) => void;
   selectedDivisionId: string | null;
   setSelectedDivisionId: (id: string | null) => void;
@@ -340,9 +341,10 @@ export default function MainContent({
         <div className="px-8 py-3.5 bg-gray-50/50 backdrop-blur-md border-b border-black/[0.03] flex items-center justify-between gap-4 overflow-x-auto no-scrollbar shrink-0 select-none">
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
             {[
+              { id: 'dashboard', icon: Zap, label: 'My Dashboard' },
               { id: 'folders', icon: FolderIcon, label: 'Divisions' },
               { id: 'team-chat', icon: MessageSquare, label: 'Space Chat' },
-              { id: 'dashboard', icon: BarChart3, label: 'KPI Dashboard' },
+              { id: 'kpi-dashboard', icon: BarChart3, label: 'Organisation KPI' },
               { id: 'space-members', icon: Users, label: 'Space Members' },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -454,6 +456,17 @@ export default function MainContent({
               className="absolute inset-0"
             >
               <DashboardView user={user} profile={profile} org={selectedOrg} />
+            </motion.div>
+          )}
+          {activeView === 'kpi-dashboard' && (
+            <motion.div
+              key="kpi-dashboard"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="absolute inset-0"
+            >
+              <KpiDashboardView user={user} profile={profile} org={selectedOrg} />
             </motion.div>
           )}
           {activeView === 'users' && profile?.role === 'superadmin' && (

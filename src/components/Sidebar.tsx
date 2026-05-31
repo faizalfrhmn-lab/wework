@@ -28,7 +28,7 @@ interface SidebarProps {
   orgs: Organization[];
   selectedOrgId: string | null;
   setSelectedOrgId: (id: string) => void;
-  activeView: 'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings' | 'users';
+  activeView: 'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings' | 'users' | 'kpi-dashboard';
   setActiveView: (view: any) => void;
   isCollapsed: boolean;
   setIsCollapsed: (c: boolean) => void;
@@ -195,7 +195,7 @@ export default function Sidebar({
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                className="space-y-1 overflow-hidden px-3"
+                className="space-y-1 px-3"
               >
                 {orgs.map((org) => (
                   <div

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Users, Shield, User, Mail, Calendar, CheckCircle2, AlertCircle, Trash2, Key, Lock, MoreVertical, Camera, UserPlus, Search } from 'lucide-react';
 import { UserProfile } from '../types';
-import { getAllUsers, updateUserProfile, deleteUserProfile } from '../services/authService';
+import { getAllUsers, updateUserProfile, deleteUserProfile, adminCreateUser } from '../services/authService';
 import { ensureSuperadminMemberships } from '../services/orgService';
 import Modal from './Modal';
 
@@ -19,6 +19,10 @@ export default function UsersView({ currentProfile }: UsersViewProps) {
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAddingUser, setIsAddingUser] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
 
   // States for Profile detail editor Modal
   const [selectedUserForEdit, setSelectedUserForEdit] = useState<UserProfile | null>(null);
@@ -350,17 +354,68 @@ export default function UsersView({ currentProfile }: UsersViewProps) {
 
       <Modal
         isOpen={isAddingUser}
-        onClose={() => setIsAddingUser(false)}
+        onClose={() => !isCreatingUser && setIsAddingUser(false)}
         title="Tambah Anggota Baru"
       >
         <div className="space-y-4">
-          <p className="text-xs text-gray-500">Fitur ini memerlukan integrasi backend untuk membuat auth user secara aman.</p>
-           <button
-              onClick={() => setIsAddingUser(false)}
-              className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-2xl transition-all"
-            >
-              Tutup
-            </button>
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-black uppercase tracking-widest text-gray-400">Nama Lengkap</label>
+            <input
+              type="text"
+              placeholder="Nama Lengkap..."
+              value={newUserName}
+              onChange={(e) => setNewUserName(e.target.value)}
+              className="w-full bg-gray-50 border border-black/5 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:ring-4 focus:ring-orange-500/10 transition-all text-black"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-black uppercase tracking-widest text-gray-400">Email</label>
+            <input
+              type="email"
+              placeholder="name@example.com"
+              value={newUserEmail}
+              onChange={(e) => setNewUserEmail(e.target.value)}
+              className="w-full bg-gray-50 border border-black/5 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:ring-4 focus:ring-orange-500/10 transition-all text-black"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-black uppercase tracking-widest text-gray-400">Password Sementara</label>
+            <input
+              type="text"
+              placeholder="Password..."
+              value={newUserPassword}
+              onChange={(e) => setNewUserPassword(e.target.value)}
+              className="w-full bg-gray-50 border border-black/5 rounded-2xl px-4 py-3 text-xs font-bold font-mono outline-none focus:ring-4 focus:ring-orange-500/10 transition-all text-black"
+            />
+          </div>
+          <button
+            onClick={async () => {
+              if (!newUserName || !newUserEmail || !newUserPassword) return;
+              setIsCreatingUser(true);
+              try {
+                await adminCreateUser({
+                  displayName: newUserName,
+                  email: newUserEmail,
+                  tempPassword: newUserPassword,
+                });
+                setMessage({ type: 'success', text: 'User berhasil ditambah' });
+                setIsAddingUser(false);
+                setNewUserName('');
+                setNewUserEmail('');
+                setNewUserPassword('');
+                setTimeout(() => setMessage(null), 3000);
+              } catch (err: any) {
+                console.error('Create user error:', err);
+                setMessage({ type: 'error', text: `Gagal menambah user: ${err.message || 'Error tidak diketahui'}` });
+              } finally {
+                setIsCreatingUser(false);
+              }
+            }}
+            disabled={isCreatingUser || !newUserName || !newUserEmail || !newUserPassword}
+            className="w-full py-3 px-4 bg-black hover:bg-gray-800 disabled:opacity-50 text-white font-bold text-xs rounded-2xl transition-all"
+          >
+            {isCreatingUser ? 'Menambahkan...' : 'Tambah'}
+          </button>
         </div>
       </Modal>
 

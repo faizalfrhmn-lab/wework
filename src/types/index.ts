@@ -75,6 +75,8 @@ export interface Task {
   assigneeId?: string;
   assigneeIds?: string[];
   deadline: string;
+  extensionRequested?: boolean;
+  extensionStatus?: 'pending' | 'approved' | 'rejected';
   progress: number;
   completedAt?: any;
   createdAt: any;

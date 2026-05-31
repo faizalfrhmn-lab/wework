@@ -41,7 +41,7 @@ const transformTask = (dbTask: any): Task => {
     assigneeId: assigneeId || undefined,
     assigneeIds: assigneeIds || [],
     note: text || '',
-    createdBy: dbTask.createdBy // Add this line
+    // createdBy: dbTask.createdBy // Removed temporarily
   };
 };
 
@@ -80,8 +80,7 @@ export const createTask = async (orgId: string, folderId: string, title: string,
         deadline,
         status: 'todo',
         progress: 0,
-        createdAt: new Date().toISOString(),
-        createdBy: creatorId
+        createdAt: new Date().toISOString()
       })
       .select()
       .single();
@@ -150,7 +149,8 @@ export const subscribeToTasks = (divisionId: string, userId: string, callback: (
   const channelId = `tasks_${divisionId}_${Math.random().toString(36).substring(7)}`;
   const channel = supabase
     .channel(channelId)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `folderId=eq.${divisionId}` }, () => {
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `folderId=eq.${divisionId}` }, (payload) => {
+      console.log('Task change detected:', payload);
       debouncedFetchTasks();
     })
     .subscribe();
@@ -208,6 +208,19 @@ export const toggleSubTask = async (taskId: string, subtaskId: string, completed
     if (error) throw error;
   } catch (error) {
     console.error('Toggle subtask error:', error);
+  }
+};
+
+export const deleteSubTask = async (subtaskId: string) => {
+  try {
+    const { error } = await supabase
+      .from('subtasks')
+      .delete()
+      .eq('id', subtaskId);
+    if (error) throw error;
+  } catch (error) {
+    console.error('Delete subtask error:', error);
+    throw error;
   }
 };
 
@@ -498,6 +511,43 @@ export const deleteTaskLink = async (linkId: string) => {
   }
 };
 
+export const deleteTask = async (taskId: string) => {
+  try {
+    console.log('Attempting to delete task:', taskId);
+    
+    // Helper to delete
+    const safeDeleteFromTable = async (tableName: string, column: string, id: string) => {
+      try {
+        const { error } = await supabase.from(tableName).delete().eq(column, id);
+        if (error) console.error(`Error deleting from ${tableName}:`, error);
+        else console.log(`${tableName} deleted`);
+      } catch (e) {
+        console.error(`Exception deleting from ${tableName}:`, e);
+      }
+    };
+
+    // 1. Hapus subtasks
+    await safeDeleteFromTable('subtasks', 'taskId', taskId);
+    
+    // 2. Hapus task links
+    await safeDeleteFromTable('task_links', 'taskId', taskId);
+    
+    // 3. Hapus comments
+    await safeDeleteFromTable('messages', 'taggedTaskId', taskId);
+    
+    // 4. Hapus task
+    const { error: taskError, data: deletedTask } = await supabase.from('tasks').delete().eq('id', taskId).select();
+    if (taskError) {
+       console.error('Error deleting task (Task table):', taskError);
+       throw taskError;
+    }
+    console.log('Task deleted successfully:', taskId, 'Result:', deletedTask);
+  } catch (error) {
+    console.error('Delete task error:', error);
+    throw error;
+  }
+};
+
 export const updateTaskAssignee = async (taskId: string, assigneeId: string | string[] | null, orgId: string, userId: string, senderName: string = 'Seseorang') => {
   try {
     const { data: dbTask, error: fetchError } = await supabase
@@ -576,6 +626,51 @@ export const updateTaskNote = async (taskId: string, text: string) => {
     if (updateError) throw updateError;
   } catch (error) {
     console.error('Update task note error:', error);
+    throw error;
+  }
+};
+
+export const requestTaskExtension = async (taskId: string, creatorId: string, orgId: string, requesterName: string, taskTitle: string) => {
+  try {
+    const { error } = await supabase
+      .from('tasks')
+      .update({
+        extensionRequested: true,
+        extensionStatus: 'pending'
+      })
+      .eq('id', taskId);
+    if (error) throw error;
+    
+    await createNotification(
+      creatorId,
+      orgId,
+      'deadline',
+      'Permintaan Perpanjangan Deadline',
+      `${requesterName} meminta perpanjangan deadline untuk tugas "${taskTitle}".`,
+      { view: 'folders', taskId: taskId }
+    );
+  } catch (error) {
+    console.error('Request task extension error:', error);
+    throw error;
+  }
+};
+
+export const updateTaskExtensionStatus = async (taskId: string, status: 'approved' | 'rejected', newDeadline?: string) => {
+  try {
+    const updateData: any = {
+      extensionRequested: false,
+      extensionStatus: status
+    };
+    if (status === 'approved' && newDeadline) {
+      updateData.deadline = newDeadline;
+    }
+    const { error } = await supabase
+      .from('tasks')
+      .update(updateData)
+      .eq('id', taskId);
+    if (error) throw error;
+  } catch (error) {
+    console.error('Update task extension status error:', error);
     throw error;
   }
 };

@@ -6,6 +6,7 @@ import { sendMessage, subscribeToMessages, clearChatMessages, unsendMessage } fr
 import { subscribeToOrgTasks } from '../services/taskService';
 import { getAllUsers } from '../services/authService';
 import { supabase } from '../lib/supabase';
+import TaskCard from './TaskCard';
 import Modal from './Modal';
 
 interface ChatViewProps {
@@ -22,9 +23,11 @@ export default function ChatView({ user, profile, org, divisionId, divisionName:
   const [newMessage, setNewMessage] = useState('');
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [taggedTask, setTaggedTask] = useState<Task | null>(null);
+  const [viewingTask, setViewingTask] = useState<Task | null>(null);
   const [showTaskPicker, setShowTaskPicker] = useState(false);
   const [taskSearchQuery, setTaskSearchQuery] = useState('');
   const [showUserPicker, setShowUserPicker] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [divisionName, setDivisionName] = useState<string | null>(initialDivisionName || null);
@@ -205,7 +208,14 @@ export default function ChatView({ user, profile, org, divisionId, divisionName:
                   
                   {msg.taggedTaskId && (
                     <button
-                      onClick={() => onNavigateToTask?.(msg.taggedTaskDivisionId!, msg.taggedTaskId!)}
+                      onClick={() => {
+                        const taskToShow = allTasks.find(t => t.id === msg.taggedTaskId);
+                        if (taskToShow) {
+                          setViewingTask(taskToShow);
+                        } else {
+                          onNavigateToTask?.(msg.taggedTaskDivisionId!, msg.taggedTaskId!);
+                        }
+                      }}
                       className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-black transition-all ${
                         isMine
                           ? 'bg-orange-500 text-white border-transparent hover:bg-orange-600 shadow-lg shadow-orange-500/20'
@@ -236,12 +246,24 @@ export default function ChatView({ user, profile, org, divisionId, divisionName:
         </div>
       </div>
 
+{viewingTask && (
+        <TaskCard 
+          user={user} 
+          profile={profile} 
+          org={org} 
+          task={viewingTask} 
+          popupOnly={true}
+          isSelected={true}
+          onCloseDetail={() => setViewingTask(null)}
+        />
+      )}
+
       {showTaskPicker && (
-        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm z-30 flex items-end justify-center p-8">
+        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm z-[100] flex items-end justify-center p-8">
           <motion.div 
             initial={{ y: 100 }}
             animate={{ y: 0 }}
-            className="w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[60%]"
+            className="w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[80%]"
           >
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-black uppercase tracking-widest text-gray-900">Tag a Task</h3>
@@ -342,21 +364,30 @@ export default function ChatView({ user, profile, org, divisionId, divisionName:
       </div>
 
       {showUserPicker && (
-        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm z-30 flex items-end justify-center p-8">
+        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm z-[100] flex items-end justify-center p-8">
           <motion.div 
             initial={{ y: 100 }}
             animate={{ y: 0 }}
-            className="w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[60%]"
+            className="w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[80%]"
           >
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-black uppercase tracking-widest text-gray-900">Mention a User</h3>
-              <button onClick={() => setShowUserPicker(false)} className="p-2 hover:bg-gray-100 rounded-full">
+              <button onClick={() => { setShowUserPicker(false); setUserSearchQuery(''); }} className="p-2 hover:bg-gray-100 rounded-full">
                 <X className="w-5 h-5 text-gray-400" />
               </button>
             </div>
+            <div className="p-4 border-b border-gray-100">
+              <input
+                type="text"
+                placeholder="Search users..."
+                value={userSearchQuery}
+                onChange={(e) => setUserSearchQuery(e.target.value)}
+                className="w-full bg-gray-50 border-none rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:ring-4 focus:ring-orange-500/10 transition-all text-black"
+              />
+            </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {spaceMembers.length > 0 ? (
-                spaceMembers.map(u => (
+              {spaceMembers.filter(u => (u.displayName?.toLowerCase().includes(userSearchQuery.toLowerCase()) || u.email.toLowerCase().includes(userSearchQuery.toLowerCase()))).length > 0 ? (
+                spaceMembers.filter(u => (u.displayName?.toLowerCase().includes(userSearchQuery.toLowerCase()) || u.email.toLowerCase().includes(userSearchQuery.toLowerCase()))).map(u => (
                   <button
                     key={u.id}
                     onClick={() => {

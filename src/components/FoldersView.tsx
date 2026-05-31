@@ -12,7 +12,7 @@ import {
   Edit2
 } from 'lucide-react';
 import { Organization, Division, UserProfile, AppUser } from '../types';
-import { subscribeToFolders, createFolder, deleteFolder, updateFolder } from '../services/orgService';
+import { subscribeToFolders, createFolder, deleteFolder, updateFolder, clearFolder } from '../services/orgService';
 import TaskBoard from './TaskBoard';
 import LibraryExplorer from './LibraryExplorer';
 import ChatView from './ChatView';
@@ -69,6 +69,9 @@ export default function FoldersView({
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  const [clearingFolderId, setClearingFolderId] = useState<string | null>(null);
+  const [isClearing, setIsClearing] = useState(false);
 
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -131,6 +134,21 @@ export default function FoldersView({
       alert(`Gagal menghapus divisi: ${err.message}`);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleClearDivision = async (e: MouseEvent, divisionId: string) => {
+    e.stopPropagation();
+    if (isClearing) return;
+
+    setIsClearing(true);
+    try {
+      await clearFolder(divisionId);
+      setClearingFolderId(null);
+    } catch (err: any) {
+      alert(`Gagal membersihkan divisi: ${err.message}`);
+    } finally {
+      setIsClearing(false);
     }
   };
 
@@ -239,52 +257,20 @@ export default function FoldersView({
                           <Trash2 className="w-3.5 h-3.5" />
                           Hapus
                         </button>
+                        <button
+                          onClick={() => {
+                            setClearingFolderId(division.id);
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2.5 text-[11px] font-bold text-orange-500/60 hover:text-orange-500 hover:bg-orange-50 transition-all text-left border-t border-gray-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Bersihkan Area
+                        </button>
                       </motion.div>
                     )}
                   </AnimatePresence>
 
-                  {/* Delete Confirmation Overlay */}
-                  <AnimatePresence>
-                    {deletingFolderId === division.id && (
-                      <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <motion.div 
-                          initial={{ scale: 0.9, y: 20 }}
-                          animate={{ scale: 1, y: 0 }}
-                          className="bg-white rounded-3xl p-8 max-w-xs w-full shadow-2xl text-center"
-                        >
-                          <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                            <Trash2 className="w-8 h-8" />
-                          </div>
-                          <h3 className="text-xl font-black text-gray-900 mb-2 uppercase tracking-tighter">Hapus Divisi?</h3>
-                          <p className="text-sm text-gray-500 font-medium leading-relaxed mb-8">
-                             Seluruh data tugas dan library di <span className="font-bold text-black">"{division.name}"</span> akan dihapus permanen.
-                          </p>
-                          <div className="grid grid-cols-2 gap-3">
-                            <button
-                              disabled={isDeleting}
-                              onClick={() => setDeletingFolderId(null)}
-                              className="py-4 rounded-2xl font-bold text-sm text-gray-400 hover:text-black hover:bg-gray-50 transition-all border border-gray-100"
-                            >
-                              Batal
-                            </button>
-                            <button
-                              onClick={(e) => handleDeleteDivision(e, division.id)}
-                              disabled={isDeleting}
-                              className="py-4 bg-red-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all disabled:opacity-50"
-                            >
-                              {isDeleting ? 'Menghapus...' : 'Hapus'}
-                            </button>
-                          </div>
-                        </motion.div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
                 </div>
               )}
 
@@ -505,6 +491,67 @@ export default function FoldersView({
           Simpan Perubahan
         </button>
       </form>
+    </Modal>
+
+    {/* Clear Confirmation Modal */}
+    <Modal
+      isOpen={clearingFolderId !== null}
+      onClose={() => setClearingFolderId(null)}
+      title="Bersihkan Area?"
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">Seluruh data tugas dan library di divisi ini akan dihapus permanen. Aksi ini tidak dapat dibatalkan.</p>
+        <div className="flex justify-end gap-2">
+          <button 
+            disabled={isClearing}
+            onClick={() => setClearingFolderId(null)} 
+            className="px-4 py-2 text-sm font-bold text-gray-500 hover:text-gray-700"
+          >
+            Batal
+          </button>
+          <button 
+            onClick={(e) => clearingFolderId && handleClearDivision(e, clearingFolderId)}
+            disabled={isClearing}
+            className="px-4 py-2 text-sm font-bold text-white bg-orange-600 rounded-xl hover:bg-orange-700"
+          >
+            {isClearing ? 'Membersihkan...' : 'Bersihkan Area'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+
+    {/* Delete Confirmation Modal */}
+    <Modal
+      isOpen={deletingFolderId !== null}
+      onClose={() => setDeletingFolderId(null)}
+      title="Hapus Divisi?"
+    >
+      {deletingFolderId && divisions.find(d => d.id === deletingFolderId) && (
+        <div className="text-center">
+          <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Trash2 className="w-8 h-8" />
+          </div>
+          <p className="text-sm text-gray-500 font-medium leading-relaxed mb-8">
+             Seluruh data tugas dan library di <span className="font-bold text-black">"{divisions.find(d => d.id === deletingFolderId)?.name}"</span> akan dihapus permanen.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              disabled={isDeleting}
+              onClick={() => setDeletingFolderId(null)}
+              className="py-4 rounded-2xl font-bold text-sm text-gray-400 hover:text-black hover:bg-gray-50 transition-all border border-gray-100"
+            >
+              Batal
+            </button>
+            <button
+              onClick={(e) => deletingFolderId && handleDeleteDivision(e, deletingFolderId)}
+              disabled={isDeleting}
+              className="py-4 bg-red-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all disabled:opacity-50"
+            >
+              {isDeleting ? 'Menghapus...' : 'Hapus'}
+            </button>
+          </div>
+        </div>
+      )}
     </Modal>
     </>
   );

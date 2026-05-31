@@ -232,6 +232,46 @@ export const deleteOrganization = async (orgId: string) => {
   }
 };
 
+export const clearFolder = async (folderId: string) => {
+  try {
+    console.log('--- STARTING DIVISION CLEAR ---', folderId);
+    
+    // 1. Temukan semua task di folder ini untuk menghapus subtasknya
+    const { data: tasks } = await supabase.from('tasks').select('id').eq('folderId', folderId);
+    if (tasks && tasks.length > 0) {
+      const taskIds = tasks.map(t => t.id);
+      await supabase.from('subtasks').delete().in('taskId', taskIds);
+    }
+    
+    await supabase.from('tasks').delete().eq('folderId', folderId);
+
+    // 2. Hapus data terkait lainnya secara paralel
+    const tables = [
+      'messages',
+      'task_links',
+      'library_folders',
+      'subtasks', // Just in case
+    ];
+
+    await Promise.all(tables.map(async (table) => {
+      try {
+        console.log(`Clearing table ${table} for folder/division ${folderId}`);
+        await Promise.all([
+          supabase.from(table).delete().eq('divisionId', folderId),
+          supabase.from(table).delete().eq('folderId', folderId)
+        ]);
+      } catch (e) {
+        console.error(`Error clearing table ${table}:`, e);
+      }
+    }));
+    
+    console.log('--- DIVISION CLEAR SUCCESS ---');
+  } catch (error: any) {
+    console.error('Clear folder error:', error);
+    throw new Error(error.message || 'Gagal membersihkan Divisi.');
+  }
+};
+
 export const deleteFolder = async (folderId: string) => {
   try {
     console.log('--- STARTING DIVISION DELETE ---', folderId);

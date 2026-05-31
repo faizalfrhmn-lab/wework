@@ -88,10 +88,21 @@ export const logout = async () => {
 
 export const updatePassword = async (newPassword: string) => {
   try {
-    const { error } = await supabase.auth.updateUser({
-      password: newPassword
-    });
-    if (error) throw error;
+    const localUserStr = localStorage.getItem('local_auth_user');
+    
+    if (localUserStr) {
+      const localUser = JSON.parse(localUserStr);
+      const { error } = await supabase
+        .from('users')
+        .update({ tempPassword: newPassword })
+        .eq('id', localUser.uid);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+      if (error) throw error;
+    }
   } catch (error) {
     console.error('Update password error:', error);
     throw error;
@@ -238,6 +249,25 @@ export const updateUserProfile = async (userId: string, data: Partial<UserProfil
     if (error) throw error;
   } catch (error) {
     console.error('Update profile error:', error);
+  }
+};
+
+export const adminCreateUser = async (profile: Partial<UserProfile> & { email: string }) => {
+  try {
+    const id = crypto.randomUUID();
+    const { error } = await supabase
+      .from('users')
+      .insert({
+        id,
+        ...profile,
+        createdAt: new Date().toISOString(),
+        role: profile.role || 'staff'
+      });
+    if (error) throw error;
+    return id;
+  } catch (error) {
+    console.error('Create profile error:', error);
+    throw error;
   }
 };
 

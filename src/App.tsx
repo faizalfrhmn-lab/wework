@@ -32,7 +32,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings' | 'users'>('folders');
+  const [activeView, setActiveView] = useState<'folders' | 'chat' | 'team-chat' | 'dashboard' | 'settings' | 'users' | 'kpi-dashboard'>('dashboard');
   const [selectedDivisionId, setSelectedDivisionId] = useState<string | null>(null);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {

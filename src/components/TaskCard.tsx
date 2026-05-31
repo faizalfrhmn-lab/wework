@@ -18,6 +18,7 @@ import {
   DollarSign,
   Send,
   AtSign,
+  Trash2,
 } from "lucide-react";
 import {
   Task,
@@ -31,6 +32,7 @@ import {
   subscribeToSubTasks,
   addSubTask,
   toggleSubTask,
+  deleteSubTask,
   addTaskLink,
   updateTaskProgress,
   subscribeToLibraryItems,
@@ -38,6 +40,9 @@ import {
   updateSubTaskRevenue,
   updateTaskAssignee,
   updateTaskNote,
+  deleteTask,
+  requestTaskExtension,
+  updateTaskExtensionStatus,
 } from "../services/taskService";
 import {
   sendMessage,
@@ -106,6 +111,7 @@ export default function TaskCard({
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [assigneeProfiles, setAssigneeProfiles] = useState<UserProfile[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [memberProfiles, setMemberProfiles] = useState<UserProfile[]>([]);
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
@@ -225,6 +231,29 @@ export default function TaskCard({
     }
   };
 
+  const handleDelete = async (e: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('!!! Delete button clicked for task:', task.id);
+    
+    if (window.confirm('Yakin ingin menghapus tugas ini?')) {
+      console.log('User confirmed deletion for:', task.id);
+      setIsDeleting(true);
+      try {
+        await deleteTask(task.id);
+        console.log('Delete task call successful for:', task.id);
+        if (onCloseDetail) onCloseDetail();
+      } catch (err: any) {
+        console.error('Delete task failed:', err);
+        alert(`Gagal menghapus tugas: ${err.message || 'Error tidak diketahui'}`);
+      } finally {
+        setIsDeleting(false);
+      }
+    } else {
+      console.log('User cancelled deletion');
+    }
+  };
+
   const formatCommentDate = (createdAtString: any) => {
     if (!createdAtString) return "";
     try {
@@ -310,13 +339,12 @@ export default function TaskCard({
     });
   };
 
-  const isManager =
-    profile?.role === "manager" ||
-    profile?.role === "superadmin" ||
-    org.managerId === user.uid;
+  const isManager = profile?.role === "manager";
   const isSuperadmin = profile?.role === "superadmin";
+  const creatorProfile = memberProfiles.find(p => p.id === task.createdBy);
+  const isCreatorStaff = creatorProfile?.role === "staff";
 
-  const canApprove = isSuperadmin || (isManager && task.createdBy === user.uid);
+  const canApprove = isSuperadmin || (isManager && isCreatorStaff);
   const isRevenueEnabled =
     org.settings?.revenueEnabledDivisions?.includes(task.folderId) ||
     org.settings?.revenueEnabledCategories?.includes(task.category || "");
@@ -397,7 +425,53 @@ export default function TaskCard({
     updateSubTaskRevenue(task.id, subtaskId, count, amount, proofUrl);
   };
 
-  const StatusButtons = ({ disabled = false }: { disabled?: boolean }) => (
+  const StatusButtons = ({ disabled = false }: { disabled?: boolean }) => {
+    const isDeadlinePassed = task.status !== 'done' && new Date(task.deadline) < new Date();
+    
+    if (isDeadlinePassed && !task.extensionRequested && task.extensionStatus !== 'approved') {
+        return (
+            <button
+                onClick={async () => {
+                   await requestTaskExtension(task.id, task.createdBy || '', org.id, profile?.displayName || 'User', task.title);
+                }}
+                className="w-full mt-3 py-2 bg-red-600 text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:bg-red-700 transition-colors"
+            >
+                Minta Perpanjangan
+            </button>
+        );
+    }
+    
+    if (task.extensionRequested) {
+        if (task.createdBy === user.uid) {
+            return (
+                <div className="w-full mt-3 flex gap-2">
+                    <button
+                        onClick={async () => {
+                            await updateTaskExtensionStatus(task.id, 'approved', task.deadline); // Just keeping deadline, user can update later
+                        }}
+                        className="flex-1 py-2 bg-green-600 text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                        Approve
+                    </button>
+                    <button
+                        onClick={async () => {
+                            await updateTaskExtensionStatus(task.id, 'rejected');
+                        }}
+                        className="flex-1 py-2 bg-gray-200 text-gray-700 text-[10px] font-black uppercase tracking-wider rounded-lg hover:bg-gray-300 transition-colors"
+                    >
+                        Reject
+                    </button>
+                </div>
+            );
+        }
+        return (
+            <div className="w-full mt-3 py-2 bg-gray-100 text-gray-500 text-[10px] font-black uppercase tracking-wider rounded-lg text-center">
+                Menunggu Persetujuan
+            </div>
+        );
+    }
+
+    return (
     <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-gray-50">
       {task.status === "todo" && (
         <button
@@ -493,6 +567,7 @@ export default function TaskCard({
       )}
     </div>
   );
+  };
 
   return (
     <motion.div
@@ -555,9 +630,6 @@ export default function TaskCard({
               </span>
             )}
           </div>
-          <button className="text-gray-300 hover:text-gray-600 transition-colors">
-            <MoreVertical className="w-4 h-4" />
-          </button>
         </div>
 
         <h4 className="font-bold text-gray-900 leading-tight mb-3 group-hover:text-orange-600 transition-colors">
@@ -683,33 +755,44 @@ export default function TaskCard({
                 {isEditing ? 'Editing Mode' : 'View Mode'}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsEditing(!isEditing)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-1.5 border ${
-                isEditing
-                  ? 'bg-orange-600 border-orange-500 text-white hover:bg-orange-700 shadow-md shadow-orange-500/10'
-                  : 'bg-orange-50 border-orange-100 text-orange-600 hover:bg-orange-100'
-              }`}
-            >
-              {isEditing ? (
-                <>
-                  <svg className="w-3.5 h-3.5 stroke-[2.5]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                  Selesai
-                </>
-              ) : (
-                <>
-                  <svg className="w-3.5 h-3.5 stroke-[2.5]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                  </svg>
-                  Edit
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsEditing(!isEditing)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-1.5 border ${
+                  isEditing
+                    ? 'bg-orange-600 border-orange-500 text-white hover:bg-orange-700 shadow-md shadow-orange-500/10'
+                    : 'bg-orange-50 border-orange-100 text-orange-600 hover:bg-orange-100'
+                }`}
+              >
+                {isEditing ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 stroke-[2.5]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    Selesai
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5 stroke-[2.5]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                    Edit
+                  </>
+                )}
+              </button>
+              <button
+                 type="button"
+                 onClick={handleDelete}
+                 disabled={isDeleting}
+                 className="px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-1.5 border border-red-100 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Hapus
+              </button>
+            </div>
           </div>
 
           {/* Assignees Selection */}
@@ -718,7 +801,7 @@ export default function TaskCard({
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-gray-450">
                 Penerima Tugas & Delegasi (Assignees)
               </span>
-              {isEditing && isManager && (
+              {isEditing && (
                 <div className="relative" ref={assigneeDropdownRef}>
                   <button
                     type="button"
@@ -964,6 +1047,15 @@ export default function TaskCard({
                       >
                         <ExternalLink className="w-4 h-4" />
                       </a>
+                    )}
+                    {isEditing && (
+                      <button
+                        type="button"
+                        onClick={() => deleteSubTask(st.id)}
+                        className="text-red-400 hover:text-red-600 p-1 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     )}
                   </div>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, ListTodo, X, ChevronLeft, ChevronRight, Minimize2, Maximize2, RefreshCw } from 'lucide-react';
+import { Plus, ListTodo, X, ChevronLeft, ChevronRight, Minimize2, Maximize2, RefreshCw, LayoutDashboard, LayoutList, User } from 'lucide-react';
 import { Editor, Toolbar, BtnBold, BtnItalic, BtnLink, BtnBulletList, BtnNumberedList, EditorProvider } from 'react-simple-wysiwyg';
 import { Task, UserProfile, Organization, AppUser } from '../types';
 import { subscribeToTasks, createTask, addSubTask } from '../services/taskService';
@@ -38,6 +38,8 @@ export default function TaskBoard({
 }: TaskBoardProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
   // Automatically expand the column containing the selectedTaskId if it is collapsed
   useEffect(() => {
     if (selectedTaskId && tasks.length > 0) {
@@ -60,6 +62,9 @@ export default function TaskBoard({
   const [newTaskAssigneeIds, setNewTaskAssigneeIds] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [subtasks, setSubtasks] = useState<{ title: string; initialAmount: number }[]>([]);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'todo' | 'in-progress' | 'review' | 'revision' | 'done'>('all');
+
+  const [selectedTaskIdModal, setSelectedTaskIdModal] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isModalOpen) {
@@ -163,79 +168,109 @@ export default function TaskBoard({
   return (
     <>
     <div className={`h-full flex flex-col transition-all duration-500 ${isFocusMode ? 'bg-[#0079BF]' : 'bg-white'}`}>
-       <div className={`px-10 py-6 transition-all duration-300 flex items-center justify-between shrink-0 ${
+        <div className={`px-10 py-6 transition-all duration-300 flex items-center justify-between shrink-0 gap-6 ${
          isFocusMode ? 'bg-black/10 border-white/10 text-white' : 'bg-transparent'
        }`}>
-          <div className="flex items-center gap-4">
-             <div className={`flex items-center gap-1 p-1 rounded-xl ${
-               isFocusMode ? 'bg-white/10' : 'bg-gray-50'
-             }`}>
-                <button 
-                  onClick={expandAll}
-                  className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors ${
-                    isFocusMode ? 'text-white/80 hover:text-white' : 'text-gray-400 hover:text-black'
+           <div className="flex items-center gap-4 flex-wrap">
+             <div className="flex items-center gap-2">
+               <input
+                 type="text"
+                 placeholder="Search tasks..."
+                 value={searchQuery}
+                 onChange={(e) => setSearchQuery(e.target.value)}
+                 className={`px-4 py-2.5 rounded-2xl text-xs font-medium w-64 ${isFocusMode ? 'bg-white/10 text-white placeholder-white/50' : 'bg-white border border-gray-100 shadow-sm text-black placeholder-gray-400'} outline-none focus:ring-2 focus:ring-orange-500/20 transition-all`}
+               />
+               
+               <select 
+                 value={statusFilter}
+                 onChange={(e) => setStatusFilter(e.target.value as any)}
+                 className={`px-3 py-2.5 rounded-2xl text-xs font-medium ${isFocusMode ? 'bg-white/10 text-white' : 'bg-white border border-gray-100 shadow-sm text-black'} outline-none`}
+               >
+                 <option value="all">All Status</option>
+                 {categories.map(c => <option key={c} value={c} className="capitalize">{c.replace('-', ' ')}</option>)}
+               </select>
+
+               <button 
+                  onClick={() => setShowOnlyMyTasks(!showOnlyMyTasks)}
+                  className={`p-3 rounded-2xl transition-all ${
+                    showOnlyMyTasks 
+                      ? 'bg-orange-500 text-white' 
+                      : isFocusMode ? 'bg-white/10 text-white' : 'bg-white border border-gray-100 shadow-sm text-gray-900'
                   }`}
-                >
-                  Expand
-                </button>
-                <div className={`w-[1px] h-3 ${isFocusMode ? 'bg-white/10' : 'bg-gray-200'}`} />
-                <button 
-                  onClick={collapseAll}
-                  className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors ${
-                    isFocusMode ? 'text-white/80 hover:text-white' : 'text-gray-400 hover:text-black'
-                  }`}
-                >
-                  Collapse
-                </button>
+                  title={showOnlyMyTasks ? 'Showing My Tasks' : 'Show All Tasks'}
+               >
+                  <User className="w-4 h-4" />
+               </button>
              </div>
 
+             <div className="flex items-center gap-1 bg-gray-100 p-1.5 rounded-2xl">
+                <button 
+                  onClick={() => setViewMode(prev => prev === 'kanban' ? 'table' : 'kanban')}
+                  className={`p-2.5 rounded-xl transition-colors ${
+                    viewMode === 'table' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-black'
+                  }`}
+                  title={viewMode === 'kanban' ? 'Switch to Table' : 'Switch to Kanban'}
+                >
+                  {viewMode === 'kanban' ? <LayoutDashboard className="w-4 h-4" /> : <LayoutList className="w-4 h-4" />}
+                </button>
+
+                {viewMode === 'kanban' && (
+                 <>
+                   <div className="w-[1px] h-4 bg-gray-200 mx-1" />
+                   <button 
+                     onClick={expandAll}
+                     className="p-2.5 rounded-xl text-gray-500 hover:text-gray-900 transition-colors"
+                     title="Expand All"
+                   >
+                     <Maximize2 className="w-4 h-4" />
+                   </button>
+                   <button 
+                     onClick={collapseAll}
+                     className="p-2.5 rounded-xl text-gray-500 hover:text-gray-900 transition-colors"
+                     title="Collapse All"
+                   >
+                     <Minimize2 className="w-4 h-4" />
+                   </button>
+                 </>
+                )}
+             </div>
+          </div>
+
+          <div className="flex items-center gap-4 flex-wrap">
              <button 
                 onClick={handleRefresh}
-                className={`p-2.5 rounded-xl transition-all ${
-                  isFocusMode ? 'bg-white/10 text-white/60 hover:text-white' : 'bg-gray-100 text-gray-400 hover:text-black'
+                className={`p-3 rounded-2xl transition-all ${
+                  isFocusMode ? 'bg-white/10 text-white/60 hover:text-white' : 'bg-white border border-gray-100 shadow-sm text-gray-400 hover:text-gray-900'
                 } ${isRefreshing ? 'animate-spin' : ''}`}
                 title="Refresh Tasks"
              >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className="w-4 h-4" />
              </button>
 
-              <button 
+             <button 
                 onClick={() => setIsFocusMode(!isFocusMode)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
+                className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${
                   isFocusMode 
-                    ? 'bg-white text-[#0079BF] shadow-xl' 
+                    ? 'bg-white text-[#0079BF]' 
                     : 'bg-gray-900 text-white hover:bg-orange-500'
                 }`}
              >
                 {isFocusMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
                 {isFocusMode ? 'Exit focus' : 'Focus view'}
              </button>
-             <button 
-                onClick={() => setShowOnlyMyTasks(!showOnlyMyTasks)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
-                  showOnlyMyTasks
-                    ? 'bg-orange-500 text-white shadow-xl' 
-                    : isFocusMode ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
-                }`}
-             >
-                {showOnlyMyTasks ? 'Showing My Tasks' : 'Show My Tasks Only'}
-             </button>
-          </div>
-          <div className="flex items-center gap-4">
-             <span className={`text-[10px] font-bold uppercase tracking-widest opacity-30 ${isFocusMode ? 'text-white' : 'text-black'}`}>
-                {tasks.length} Active Records
-             </span>
           </div>
        </div>
 
-       <div className={`flex-1 overflow-x-auto px-10 pb-10 transition-colors duration-500 ${isFocusMode ? 'bg-transparent' : 'bg-[#FAFAFA]'}`} style={{ overscrollBehaviorX: 'none' }}>
-          <div className="flex gap-6 h-full min-w-max items-start">
+        <div className={`flex-1 overflow-x-auto px-10 pb-10 transition-colors duration-500 ${isFocusMode ? 'bg-transparent' : 'bg-[#FAFAFA]'}`} style={{ overscrollBehaviorX: 'none' }}>
+          {viewMode === 'kanban' ? (
+            <div className="flex gap-6 h-full min-w-max items-start">
             {categories.map((status) => {
               const isCollapsed = collapsedColumns.includes(status);
               const columnTasks = tasks.filter(t => {
-                const isStatusMatch = t.status === status;
+                const isStatusMatch = statusFilter === 'all' ? t.status === status : t.status === status && t.status === statusFilter;
                 const isAssigned = showOnlyMyTasks ? (t.assigneeId === user.uid || t.assigneeIds?.includes(user.uid)) : true;
-                return isStatusMatch && isAssigned;
+                const isSearchMatch = searchQuery ? (t.title?.toLowerCase().includes(searchQuery.toLowerCase()) || t.note?.toLowerCase().includes(searchQuery.toLowerCase())) : true;
+                return isStatusMatch && isAssigned && isSearchMatch;
               });
               
               if (isCollapsed) {
@@ -347,6 +382,48 @@ export default function TaskBoard({
               );
             })}
           </div>
+          ) : (
+            <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-black/5 overflow-hidden">
+               <table className="w-full text-left text-xs text-gray-600">
+                  <thead className="border-b border-gray-100 uppercase tracking-wider font-bold">
+                    <tr>
+                      <th className="px-4 py-4">Title</th>
+                      <th className="px-4 py-4">Status</th>
+                      <th className="px-4 py-4">Category</th>
+                      <th className="px-4 py-4">Deadline</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {tasks.filter(t => {
+                      const isStatusMatch = statusFilter === 'all' ? true : t.status === statusFilter;
+                      const isAssigned = showOnlyMyTasks ? (t.assigneeId === user.uid || t.assigneeIds?.includes(user.uid)) : true;
+                      const isSearchMatch = searchQuery ? (t.title?.toLowerCase().includes(searchQuery.toLowerCase()) || t.note?.toLowerCase().includes(searchQuery.toLowerCase())) : true;
+                      return isAssigned && isSearchMatch && isStatusMatch;
+                    }).map(task => (
+                      <tr 
+                        key={task.id} 
+                        className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        onClick={() => setSelectedTaskIdModal(task.id)}
+                      >
+                        <td className="px-4 py-4 font-bold text-gray-900">{task.title}</td>
+                        <td className="px-4 py-4">
+                          <span className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                            task.status === 'todo' ? 'bg-gray-100 text-gray-500' : 
+                            task.status === 'in-progress' ? 'bg-blue-50 text-blue-500' : 
+                            task.status === 'review' ? 'bg-orange-50 text-orange-500' : 
+                            task.status === 'revision' ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-500'
+                          }`}>
+                            {task.status?.replace('-', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">{task.category}</td>
+                        <td className="px-4 py-4 font-medium text-gray-400">{task.deadline}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+               </table>
+            </div>
+          )}
        </div>
     </div>
     
@@ -544,6 +621,18 @@ export default function TaskBoard({
         </button>
       </form>
     </Modal>
+    
+    {selectedTaskIdModal && (
+      <TaskCard
+        user={user}
+        profile={profile}
+        org={org}
+        task={tasks.find(t => t.id === selectedTaskIdModal)!}
+        isSelected={true}
+        popupOnly={true}
+        onCloseDetail={() => setSelectedTaskIdModal(null)}
+      />
+    )}
     </>
   );
 }
