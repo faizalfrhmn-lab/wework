@@ -80,7 +80,8 @@ export const createTask = async (orgId: string, folderId: string, title: string,
         deadline,
         status: 'todo',
         progress: 0,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        createdBy: creatorId
       })
       .select()
       .single();
@@ -102,19 +103,8 @@ export const createTask = async (orgId: string, folderId: string, title: string,
       }
     }
 
-    // Notify all other members about task creation
-    const otherRecipients = finalMembers.filter(m => m !== creatorId && !inputAssignees.includes(m));
-    if (otherRecipients.length > 0) {
-      createBatchNotifications(
-        otherRecipients,
-        orgId,
-        'task_assignment',
-        `Tugas Baru: ${title}`,
-        `Tugas baru telah dibuat di divisi ${category}. Batas waktu: ${deadline}`,
-        { view: 'folders', divisionId: folderId, taskId: data.id }
-      ).catch(err => console.error('Silent notification error:', err));
-    }
-
+    // We only notify the assignees of the task. Keep otherRecipients silent as requested,
+    // so no generic workspace-wide notification is sent unless they are specifically assigned.
     return data.id;
   } catch (error) {
     console.error('Create task error:', error);
@@ -383,8 +373,19 @@ export const updateTaskStatus = async (taskId: string, status: string, userId: s
     
     if (updateError) throw updateError;
 
-    // Notify members about status change
-    const recipientIds = (task.members as string[]).filter(m => m !== userId);
+    // Notify ONLY the assignees and the creator of the task about the status change
+    const taskAssigneeIds = task.assigneeIds || [];
+    const taskCreatorId = task.createdBy || '';
+    
+    const recipientSet = new Set<string>();
+    taskAssigneeIds.forEach(id => {
+      if (id && id !== userId) recipientSet.add(id);
+    });
+    if (taskCreatorId && taskCreatorId !== userId) {
+      recipientSet.add(taskCreatorId);
+    }
+    
+    const recipientIds = Array.from(recipientSet);
     if (recipientIds.length > 0) {
       await createBatchNotifications(
         recipientIds,
@@ -655,7 +656,13 @@ export const requestTaskExtension = async (taskId: string, creatorId: string, or
   }
 };
 
-export const updateTaskExtensionStatus = async (taskId: string, status: 'approved' | 'rejected', newDeadline?: string) => {
+export const updateTaskExtensionStatus = async (
+  taskId: string, 
+  status: 'approved' | 'rejected', 
+  orgId: string,
+  approverName: string,
+  newDeadline?: string
+) => {
   try {
     const updateData: any = {
       extensionRequested: false,
@@ -669,6 +676,35 @@ export const updateTaskExtensionStatus = async (taskId: string, status: 'approve
       .update(updateData)
       .eq('id', taskId);
     if (error) throw error;
+
+    // Send realtime notification back to assignees so they know it is approved/rejected
+    try {
+      const { data: dbTask } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single();
+      if (dbTask) {
+        const { assigneeIds } = parseNote(dbTask.note);
+        if (assigneeIds && assigneeIds.length > 0) {
+          const statusLabel = status === 'approved' ? 'DISETUJUI & PERPANJANG' : 'DITOLAK';
+          const deadlineText = status === 'approved' && newDeadline 
+            ? `, batas waktu baru diperpanjang sampai tanggal ${newDeadline}` 
+            : '';
+          
+          await createBatchNotifications(
+            assigneeIds,
+            orgId,
+            'task_assignment',
+            `Pengajuan Perpanjangan ${statusLabel}`,
+            `Pengajuan perpanjangan waktu untuk tugas "${dbTask.title}" telah ${status === 'approved' ? 'disetujui' : 'ditolak'} oleh ${approverName}${deadlineText}.`,
+            { view: 'folders', divisionId: dbTask.folderId, taskId: taskId }
+          );
+        }
+      }
+    } catch (notifErr) {
+      console.error('Failed to dispatch extension decision notifications:', notifErr);
+    }
   } catch (error) {
     console.error('Update task extension status error:', error);
     throw error;

@@ -54,12 +54,62 @@ export const sendMessage = async (
       })
       .map(member => member.id);
 
-    // Notify defined recipients
-    const recipientIds = (mentionedUserIds.length > 0 ? mentionedUserIds : members)
-      .filter(m => m !== userId);
+    const isTaskComment = !!taggedTaskId;
+    let recipientIds: string[] = [];
+
+    if (isTaskComment) {
+      const recipientSet = new Set<string>();
+      if (mentionedUserIds.length > 0) {
+        mentionedUserIds.forEach(id => {
+          if (id !== userId) recipientSet.add(id);
+        });
+      }
+      
+      try {
+        const { data: dbTask } = await supabase
+          .from('tasks')
+          .select('note, createdBy')
+          .eq('id', taggedTaskId)
+          .single();
+
+        if (dbTask) {
+          let assigneeIds: string[] = [];
+          const noteStr = dbTask.note || '';
+          const trimmed = noteStr.trim();
+          if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            try {
+              const parsed = JSON.parse(trimmed);
+              assigneeIds = parsed.assigneeIds || [];
+              if (!Array.isArray(assigneeIds)) {
+                assigneeIds = parsed.assigneeId ? [parsed.assigneeId] : [];
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
+          
+          assigneeIds.forEach(aid => {
+            if (aid && aid !== userId) {
+              recipientSet.add(aid);
+            }
+          });
+          
+          const taskCreatorId = dbTask.createdBy;
+          if (taskCreatorId && taskCreatorId !== userId) {
+            recipientSet.add(taskCreatorId);
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching task assignee/creator for chat notifications:', e);
+      }
+      
+      recipientIds = Array.from(recipientSet);
+    } else {
+      recipientIds = (mentionedUserIds.length > 0 ? mentionedUserIds : members)
+        .filter(m => m !== userId);
+    }
       
     if (recipientIds.length > 0) {
-      const isTaskComment = !!taggedTaskId;
       const notificationTitle = isTaskComment
         ? `${userName} menyebut Anda di tugas: ${taggedTaskTitle}`
         : `Pesan Baru dari ${userName}`;

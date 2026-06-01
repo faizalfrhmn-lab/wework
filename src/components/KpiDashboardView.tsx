@@ -52,8 +52,8 @@ export default function DashboardView({ user, profile, org }: DashboardViewProps
     ? Math.round((tasks.filter(t => t.status === 'done').length / tasks.length) * 100) 
     : 0;
 
-  // Prepare chart data (Tasks by Month)
-  const chartData = userTasks
+  // Prepare chart data (Tasks by Month from entire Space)
+  const chartData = tasks
     .filter(t => t.status === 'done' && t.completedAt)
     .reduce((acc: any[], task) => {
       const date = new Date(task.completedAt);
@@ -73,16 +73,16 @@ export default function DashboardView({ user, profile, org }: DashboardViewProps
 
   const stats = [
     { 
-      label: 'Total Assigned', 
-      value: userTasks.length.toString(), 
+      label: 'Total Tasks', 
+      value: tasks.length.toString(), 
       icon: ListTodo, 
       color: 'text-emerald-600', 
       bg: 'bg-emerald-50',
-      sub: 'All tasks assigned to me'
+      sub: 'All tasks in this Space'
     },
     { 
       label: 'Active Tasks', 
-      value: activeUserTasks.length.toString(), 
+      value: tasks.filter(t => t.status !== 'done').length.toString(), 
       icon: Target, 
       color: 'text-blue-500', 
       bg: 'bg-blue-50',
@@ -90,7 +90,7 @@ export default function DashboardView({ user, profile, org }: DashboardViewProps
     },
     { 
       label: 'Completed', 
-      value: userTasks.filter(t => t.status === 'done').length.toString(), 
+      value: tasks.filter(t => t.status === 'done').length.toString(), 
       icon: TrendingUp, 
       color: 'text-orange-500', 
       bg: 'bg-orange-50',
@@ -98,11 +98,11 @@ export default function DashboardView({ user, profile, org }: DashboardViewProps
     },
     { 
       label: 'Completion Rate', 
-      value: userTasks.length > 0 ? `${Math.round((userTasks.filter(t => t.status === 'done').length / userTasks.length) * 100)}%` : '0%', 
+      value: tasks.length > 0 ? `${Math.round((tasks.filter(t => t.status === 'done').length / tasks.length) * 100)}%` : '0%', 
       icon: Activity, 
       color: 'text-purple-500', 
       bg: 'bg-purple-50',
-      sub: 'Of total assigned tasks'
+      sub: 'Of total workspace tasks'
     },
   ];
 
@@ -136,9 +136,9 @@ export default function DashboardView({ user, profile, org }: DashboardViewProps
                 <span className="w-8 h-1 bg-orange-500 rounded-full" />
                 <span className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-500">Live Analytics</span>
               </div>
-              <h2 className="text-5xl font-black tracking-tighter text-gray-900 mb-2 uppercase">My Performance</h2>
+              <h2 className="text-5xl font-black tracking-tighter text-gray-900 mb-2 uppercase">Performance Space</h2>
               <p className="text-gray-400 font-bold text-sm max-w-lg uppercase tracking-tight">
-                Tracking my task progress and contribution.
+                Tracking all task progress and contribution metrics inside this Space.
               </p>
             </div>
             <div className="flex items-center gap-4 bg-white p-3 rounded-[1.5rem] shadow-xl border border-black/5">
@@ -221,17 +221,17 @@ export default function DashboardView({ user, profile, org }: DashboardViewProps
                        {[
                          { 
                            label: 'Active Tasks', 
-                           val: userTasks.length > 0 ? Math.round((activeUserTasks.length / userTasks.length) * 100) : 100,
+                           val: tasks.length > 0 ? Math.round((tasks.filter(t => t.status !== 'done').length / tasks.length) * 100) : 0,
                            color: 'bg-orange-500'
                          },
                          { 
                            label: 'Task Completion', 
-                           val: userTasks.length > 0 ? Math.round((userTasks.filter(t => t.status === 'done').length / userTasks.length) * 100) : 0,
+                           val: tasks.length > 0 ? Math.round((tasks.filter(t => t.status === 'done').length / tasks.length) * 100) : 0,
                            color: 'bg-blue-500'
                          },
                          { 
                            label: 'Overall Progress', 
-                           val: userTasks.length > 0 ? Math.round(userTasks.reduce((sum, t) => sum + (t.progress || 0), 0) / userTasks.length) : 0,
+                           val: tasks.length > 0 ? Math.round(tasks.reduce((sum, t) => sum + (t.progress || 0), 0) / tasks.length) : 0,
                            color: 'bg-emerald-500'
                          },
                        ].map((item) => (
@@ -256,11 +256,11 @@ export default function DashboardView({ user, profile, org }: DashboardViewProps
               <div className="bg-orange-500 p-10 rounded-[3rem] text-white shadow-2xl shadow-orange-500/20 relative overflow-hidden">
                  <div className="relative z-10">
                     <Trophy className="w-8 h-8 mb-4" />
-                    <h3 className="text-xl font-black uppercase tracking-tighter">Contribution</h3>
+                    <h3 className="text-xl font-black uppercase tracking-tighter">My Personal Contribution</h3>
                     <p className="text-white/80 text-xs font-bold uppercase tracking-tight mt-3 leading-relaxed">
                       {userTasks.length > 0 
-                        ? `You have contributed to ${userTasks.length} tasks in this organization.`
-                        : "Start working on tasks to see your contribution metrics."}
+                        ? `You are currently delegated to ${userTasks.length} tasks in this organization space.`
+                        : "Start working on tasks to view your personal performance metrics."}
                     </p>
                  </div>
               </div>
