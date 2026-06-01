@@ -719,7 +719,7 @@ export default function TaskCard({
           </div>
         </div>
 
-        <StatusButtons disabled={isBlockedByDeadline} />
+        <StatusButtons disabled={isBlockedByDeadline || !!task.extensionRequested} />
 
         <div className="flex items-center justify-between pt-4 mt-1 border-t border-gray-50">
           <div className="flex items-center gap-4 text-gray-300">
@@ -1418,7 +1418,18 @@ export default function TaskCard({
             <span className="text-[10px] font-extrabold uppercase tracking-widest text-gray-500">
               Task Workflow Status
             </span>
-            <StatusButtons disabled={isBlockedByDeadline} />
+            {isDeadlinePassed && task.extensionStatus !== 'approved' && (
+              <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-[11px] font-bold leading-relaxed space-y-1">
+                <p className="font-extrabold uppercase text-[9px] tracking-wider text-red-700 flex items-center gap-1.5 animate-pulse">
+                  <Clock className="w-3.5 h-3.5" />
+                  Keterangan: Tugas Melebihi Batas (Overdue)
+                </p>
+                <p className="opacity-95 font-medium">
+                  Tugas ini telah melewati tenggat waktu (deadline). Silakan ajukan permohonan perpanjangan waktu terlebih dahulu di bagian bawah agar dapat melanjutkan pekerjaan.
+                </p>
+              </div>
+            )}
+            <StatusButtons disabled={isBlockedByDeadline || !!task.extensionRequested} />
           </div>
 
           {/* Pengelolaan Perpanjangan Waktu (2 Columns) */}
@@ -1517,7 +1528,12 @@ export default function TaskCard({
                           type="button"
                           onClick={async (e) => {
                             e.stopPropagation();
-                            await updateTaskExtensionStatus(task.id, 'approved', org.id, profile?.displayName || 'User', newDeadlineDate);
+                            try {
+                              await updateTaskExtensionStatus(task.id, 'approved', org.id, profile?.displayName || 'User', newDeadlineDate);
+                              alert("Berhasil menyetujui perpanjangan waktu tugas!");
+                            } catch (err: any) {
+                              alert("Gagal menyetujui perpanjangan: " + (err.message || err));
+                            }
                           }}
                           className="flex-1 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center"
                         >
@@ -1527,7 +1543,12 @@ export default function TaskCard({
                           type="button"
                           onClick={async (e) => {
                             e.stopPropagation();
-                            await updateTaskExtensionStatus(task.id, 'rejected', org.id, profile?.displayName || 'User');
+                            try {
+                              await updateTaskExtensionStatus(task.id, 'rejected', org.id, profile?.displayName || 'User');
+                              alert("Telah menolak pengajuan perpanjangan waktu.");
+                            } catch (err: any) {
+                              alert("Gagal menolak perpanjangan: " + (err.message || err));
+                            }
                           }}
                           className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center"
                         >
