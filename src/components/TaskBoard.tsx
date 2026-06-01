@@ -516,7 +516,7 @@ export default function TaskBoard({
             <button
               type="button"
               onClick={() => setSubtasks(prev => [...prev, { title: '', initialAmount: 0 }])}
-              className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-orange-500 hover:text-orange-650 transition-all font-bold"
+              className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-orange-500 hover:text-orange-600 transition-all font-bold"
             >
               <Plus className="w-3.5 h-3.5 animate-pulse" />
               Add Subtask

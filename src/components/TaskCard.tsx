@@ -159,6 +159,11 @@ export default function TaskCard({
   const canApprove = isSuperadmin || (isManager && (isCreatorStaff || task.createdBy === user.uid));
   const isBlockedByDeadline = isDeadlinePassed && task.extensionStatus !== "approved" && !canApprove;
 
+  // Superadmin can delete any task or subtask.
+  // Manager can delete any task/subtask if it was NOT created by a superadmin (e.g., created by manager or staff).
+  // Staff can never delete tasks or subtasks.
+  const canDelete = isSuperadmin || (isManager && (task.createdBy === user.uid || (creatorRole && creatorRole !== "superadmin")));
+
   useEffect(() => {
     if (task.note !== undefined) {
       setNote(task.note);
@@ -820,7 +825,7 @@ export default function TaskCard({
                 )}
               </button>
 
-              {isConfirmingDelete ? (
+              {canDelete && (isConfirmingDelete ? (
                 <div className="flex items-center gap-1.5 bg-red-50 border border-red-100 p-1 rounded-xl shadow-xs">
                   <span className="text-[9px] font-black uppercase text-red-700 tracking-wider px-1.5">Yakin hapus?</span>
                   <button
@@ -849,7 +854,7 @@ export default function TaskCard({
                   <Trash2 className="w-3.5 h-3.5" />
                   Hapus
                 </button>
-              )}
+              ))}
             </div>
           </div>
 
@@ -1121,7 +1126,7 @@ export default function TaskCard({
                         <ExternalLink className="w-4 h-4" />
                       </a>
                     )}
-                    {isEditing && (
+                    {isEditing && canDelete && (
                       <button
                         type="button"
                         onClick={() => deleteSubTask(st.id)}
@@ -1421,7 +1426,7 @@ export default function TaskCard({
                       }}
                       className={`w-full py-2 px-2 text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center flex items-center justify-center gap-1 ${
                         isDeadlinePassed 
-                          ? "bg-red-650 hover:bg-red-750 text-white shadow-md shadow-red-500/10" 
+                          ? "bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-500/10" 
                           : "bg-amber-100 hover:bg-amber-200 text-amber-800"
                       }`}
                     >
@@ -1474,7 +1479,7 @@ export default function TaskCard({
                             e.stopPropagation();
                             await updateTaskExtensionStatus(task.id, 'approved', org.id, profile?.displayName || 'User', newDeadlineDate);
                           }}
-                          className="flex-1 py-1.5 bg-green-650 hover:bg-green-750 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center"
+                          className="flex-1 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center"
                         >
                           Setujui
                         </button>
@@ -1484,7 +1489,7 @@ export default function TaskCard({
                             e.stopPropagation();
                             await updateTaskExtensionStatus(task.id, 'rejected', org.id, profile?.displayName || 'User');
                           }}
-                          className="flex-1 py-1.5 bg-red-650 hover:bg-red-750 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center"
+                          className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center"
                         >
                           Tolak
                         </button>
