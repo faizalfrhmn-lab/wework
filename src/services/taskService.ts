@@ -642,14 +642,64 @@ export const requestTaskExtension = async (taskId: string, creatorId: string, or
       .eq('id', taskId);
     if (error) throw error;
     
-    await createNotification(
-      creatorId,
-      orgId,
-      'deadline',
-      'Permintaan Perpanjangan Deadline',
-      `${requesterName} meminta perpanjangan deadline untuk tugas "${taskTitle}".`,
-      { view: 'folders', taskId: taskId }
-    );
+    // Fetch task info to get folderId (for division deep-linking in notification)
+    let folderId = '';
+    try {
+      const { data: dbTask } = await supabase
+        .from('tasks')
+        .select('folderId')
+        .eq('id', taskId)
+        .single();
+      if (dbTask) {
+        folderId = dbTask.folderId || '';
+      }
+    } catch (folderErr) {
+      console.error('Failed to pre-fetch folder details for extension notification:', folderErr);
+    }
+
+    const notifyUserIds = new Set<string>();
+    if (creatorId) {
+      notifyUserIds.add(creatorId);
+    }
+
+    try {
+      // Find all superadmins and managers
+      const { data: adminAndManagers } = await supabase
+        .from('users')
+        .select('id, role')
+        .in('role', ['superadmin', 'manager']);
+      
+      if (adminAndManagers) {
+        // Fetch organization members to ensure managers belong to this organization scope or are superadmin
+        const { data: dbOrg } = await supabase
+          .from('organizations')
+          .select('members')
+          .eq('id', orgId)
+          .single();
+        
+        const orgMembers = dbOrg?.members || [];
+        
+        adminAndManagers.forEach((u) => {
+          if (u.role === 'superadmin' || orgMembers.includes(u.id)) {
+            notifyUserIds.add(u.id);
+          }
+        });
+      }
+    } catch (dbErr) {
+      console.error('Failed to query admins/managers for notification:', dbErr);
+    }
+
+    const notificationTargets = Array.from(notifyUserIds);
+    if (notificationTargets.length > 0) {
+      await createBatchNotifications(
+        notificationTargets,
+        orgId,
+        'deadline',
+        'Permintaan Perpanjangan Deadline',
+        `${requesterName} meminta perpanjangan deadline untuk tugas "${taskTitle}".`,
+        { view: 'folders', divisionId: folderId, taskId: taskId }
+      );
+    }
   } catch (error) {
     console.error('Request task extension error:', error);
     throw error;

@@ -62,6 +62,7 @@ import {
   BtnNumberedList,
   EditorProvider,
 } from "react-simple-wysiwyg";
+import { supabase } from "../lib/supabase";
 
 interface TaskCardProps {
   key?: string | number;
@@ -83,10 +84,6 @@ export default function TaskCard({
   onCloseDetail,
   popupOnly = false,
 }: TaskCardProps) {
-  const isDeadlinePassed = task.status !== "done" && task.deadline ? new Date(task.deadline) < new Date() : false;
-  const isCreatorOrAdmin = task.createdBy === user.uid || profile?.role === "superadmin";
-  const isBlockedByDeadline = isDeadlinePassed && task.extensionStatus !== "approved" && !isCreatorOrAdmin;
-
   const [isDetailOpen, setIsDetailOpen] = useState(isSelected || false);
   const [isEditing, setIsEditing] = useState(false);
   const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
@@ -127,6 +124,40 @@ export default function TaskCard({
   const [newComment, setNewComment] = useState("");
   const [commentSuggestions, setCommentSuggestions] = useState<UserProfile[]>([]);
   const [showCommentSuggestions, setShowCommentSuggestions] = useState(false);
+  const [taskCreatorProfile, setTaskCreatorProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    if (task.createdBy) {
+      const foundInMembers = memberProfiles.find(p => p.id === task.createdBy);
+      if (foundInMembers) {
+        setTaskCreatorProfile(foundInMembers);
+      } else {
+        supabase
+          .from("users")
+          .select("*")
+          .eq("id", task.createdBy)
+          .single()
+          .then(({ data }) => {
+            if (data) {
+              setTaskCreatorProfile(data as UserProfile);
+            }
+          });
+      }
+    }
+  }, [task.createdBy, memberProfiles]);
+
+  // Derived properties and permission gates
+  const isDeadlinePassed = task.status !== "done" && task.deadline ? new Date(task.deadline) < new Date() : false;
+  const isManager = profile?.role === "manager";
+  const isSuperadmin = profile?.role === "superadmin";
+  const creatorProfile = memberProfiles.find(p => p.id === task.createdBy);
+  const creatorRole = taskCreatorProfile?.role || creatorProfile?.role;
+  const isCreatorStaff = creatorRole === "staff";
+
+  // Superadmin can approve anything. Manager can approve if the creator was staff, or if they themselves created the task.
+  // Staff can never approve.
+  const canApprove = isSuperadmin || (isManager && (isCreatorStaff || task.createdBy === user.uid));
+  const isBlockedByDeadline = isDeadlinePassed && task.extensionStatus !== "approved" && !canApprove;
 
   useEffect(() => {
     if (task.note !== undefined) {
@@ -346,12 +377,6 @@ export default function TaskCard({
     });
   };
 
-  const isManager = profile?.role === "manager";
-  const isSuperadmin = profile?.role === "superadmin";
-  const creatorProfile = memberProfiles.find(p => p.id === task.createdBy);
-  const isCreatorStaff = creatorProfile?.role === "staff";
-
-  const canApprove = isSuperadmin || (isManager && isCreatorStaff);
   const isRevenueEnabled =
     org.settings?.revenueEnabledDivisions?.includes(task.folderId) ||
     org.settings?.revenueEnabledCategories?.includes(task.category || "");
@@ -435,64 +460,35 @@ export default function TaskCard({
   const StatusButtons = ({ disabled = false }: { disabled?: boolean }) => {
     const isDeadlinePassed = task.status !== 'done' && task.deadline ? new Date(task.deadline) < new Date() : false;
     
-    if (isDeadlinePassed && !task.extensionRequested && task.extensionStatus !== 'approved') {
-        return (
-            <button
-                type="button"
-                onClick={async (e) => {
-                   e.stopPropagation();
-                   await requestTaskExtension(task.id, task.createdBy || '', org.id, profile?.displayName || 'User', task.title);
-                }}
-                className="w-full mt-3 py-2.5 bg-red-600 text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:bg-red-700 transition-colors cursor-pointer shadow-md shadow-red-500/10"
-            >
-                Minta Perpanjangan Waktu
-            </button>
-        );
-    }
-    
-    if (task.extensionRequested) {
-        if (task.createdBy === user.uid || profile?.role === 'superadmin') {
-            return (
-                <div className="w-full mt-3 p-3.5 bg-orange-50 border border-orange-100 rounded-2xl space-y-3">
-                    <div className="text-[10px] font-black text-orange-700 uppercase tracking-widest leading-none">
-                        Atur Tenggat Waktu Baru (Date):
-                    </div>
-                    <input
-                        type="date"
-                        value={newDeadlineDate}
-                        onChange={(e) => setNewDeadlineDate(e.target.value)}
-                        className="w-full text-xs p-2 border border-orange-200 rounded-xl bg-white font-bold"
-                    />
-                    <div className="flex gap-2">
-                        <button
-                            type="button"
-                            onClick={async (e) => {
-                                e.stopPropagation();
-                                await updateTaskExtensionStatus(task.id, 'approved', org.id, profile?.displayName || 'User', newDeadlineDate);
-                            }}
-                            className="flex-1 py-2 bg-green-650 hover:bg-green-750 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
-                        >
-                            Izin Perpanjang
-                        </button>
-                        <button
-                            type="button"
-                            onClick={async (e) => {
-                                e.stopPropagation();
-                                await updateTaskExtensionStatus(task.id, 'rejected', org.id, profile?.displayName || 'User');
-                            }}
-                            className="flex-1 py-2 bg-red-650 hover:bg-red-750 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
-                        >
-                            Tolak
-                        </button>
-                    </div>
-                </div>
-            );
-        }
-        return (
-            <div className="w-full mt-3 py-2 bg-gray-150 border border-gray-200 text-gray-500 text-[10px] font-black uppercase tracking-wider rounded-xl text-center">
-                Menunggu Persetujuan Perpanjangan
-            </div>
-        );
+    if (!isDetailOpen) {
+      if (task.extensionRequested) {
+          return (
+              <div className="w-full mt-3 py-2 px-3 bg-amber-50 border border-amber-200 text-amber-700 text-[9px] font-black uppercase tracking-wider rounded-lg text-center font-mono">
+                  Menunggu Perpanjangan
+              </div>
+          );
+      }
+
+      if (task.status !== 'done' && task.extensionStatus !== 'approved') {
+          const buttonText = isDeadlinePassed ? "Minta Perpanjangan (Overdue)" : "Minta Perpanjangan Waktu";
+          const buttonClass = isDeadlinePassed 
+            ? "w-full mt-3 py-2 bg-red-600 text-white text-[9px] font-black uppercase tracking-wider rounded-lg hover:bg-red-700 transition-colors cursor-pointer shadow-md shadow-red-500/10 text-center flex items-center justify-center gap-1"
+            : "w-full mt-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-black uppercase tracking-wider rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-center flex items-center justify-center gap-1";
+
+          return (
+              <button
+                  type="button"
+                  onClick={async (e) => {
+                     e.stopPropagation();
+                     await requestTaskExtension(task.id, task.createdBy || '', org.id, profile?.displayName || 'User', task.title);
+                  }}
+                  className={buttonClass}
+              >
+                  <Clock className="w-3.5 h-3.5" />
+                  {buttonText}
+              </button>
+          );
+      }
     }
 
     return (
@@ -651,6 +647,16 @@ export default function TaskCard({
               <span className="px-2.5 py-1 bg-green-50 text-green-600 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
                 <DollarSign className="w-3 h-3" />
                 Rev: Rp {task.amount.toLocaleString()}
+              </span>
+            )}
+            {task.extensionRequested && (
+              <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1 ${
+                canApprove 
+                  ? "bg-amber-500 text-white animate-pulse" 
+                  : "bg-gray-100 text-amber-600 border border-amber-200"
+              }`}>
+                <Clock className="w-3 h-3" />
+                {canApprove ? "Butuh Persetujuan Perpanjangan" : "Menunggu Persetujuan"}
               </span>
             )}
           </div>
@@ -855,7 +861,7 @@ export default function TaskCard({
                 Tenggat Waktu Melebihi Batas (Overdue)
               </p>
               <p className="opacity-90">
-                {isCreatorOrAdmin 
+                {canApprove 
                   ? "Tugas ini telah melewati deadline. Silakan setujui permohonan perpanjangan atau ubah deadline di bagian Atur Tenggat."
                   : "Batas waktu pengerjaan tugas ini telah habis. Silakan ajukan perpanjangan waktu terlebih dahulu di bagian bawah agar dapat melanjutkan pekerjaan."}
               </p>
@@ -1374,6 +1380,125 @@ export default function TaskCard({
             </span>
             <StatusButtons disabled={isBlockedByDeadline} />
           </div>
+
+          {/* Pengelolaan Perpanjangan Waktu (2 Columns) */}
+          {task.status !== 'done' && (
+            <div className="bg-amber-50/20 p-4 rounded-2xl border border-amber-200/50 space-y-3 mt-4">
+              <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                Manajemen Perpanjangan Waktu
+              </span>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                {/* Kolom 1: Pengajuan Perpanjangan */}
+                <div className="bg-white p-3.5 rounded-xl border border-amber-100 flex flex-col justify-between space-y-2">
+                  <div>
+                    <h6 className="text-[9px] font-black uppercase tracking-wider text-gray-400">
+                      1. Pengajuan (Request)
+                    </h6>
+                    <p className="text-[10px] font-medium text-gray-500 mt-1 leading-relaxed">
+                      {task.extensionRequested 
+                        ? "Permintaan perpanjangan waktu sudah dikirim ke Atasan / Pembuat tugas." 
+                        : "Jika pekerjaan melebihi tenggat, ajukan penambahan waktu pengerjaan di sini."}
+                    </p>
+                  </div>
+                  
+                  {task.extensionRequested ? (
+                    <div className="py-2 px-2.5 bg-amber-50 text-amber-700 text-[9px] font-black uppercase tracking-wider rounded-lg text-center border border-amber-150 flex items-center justify-center gap-1">
+                      <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-ping" />
+                      Menunggu Persetujuan
+                    </div>
+                  ) : task.extensionStatus === 'approved' ? (
+                    <div className="py-2 px-2.5 bg-green-50 text-green-700 text-[9px] font-black uppercase tracking-wider rounded-lg text-center border border-green-150 font-bold">
+                      Telah Diperpanjang ✅
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await requestTaskExtension(task.id, task.createdBy || '', org.id, profile?.displayName || 'User', task.title);
+                      }}
+                      className={`w-full py-2 px-2 text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center flex items-center justify-center gap-1 ${
+                        isDeadlinePassed 
+                          ? "bg-red-650 hover:bg-red-750 text-white shadow-md shadow-red-500/10" 
+                          : "bg-amber-100 hover:bg-amber-200 text-amber-800"
+                      }`}
+                    >
+                      <Clock className="w-3 h-3" />
+                      {isDeadlinePassed ? "Minta Perpanjangan (Overdue)" : "Minta Perpanjangan"}
+                    </button>
+                  )}
+                </div>
+
+                {/* Kolom 2: Persetujuan Atasan */}
+                <div className="bg-white p-3.5 rounded-xl border border-amber-100 flex flex-col justify-between space-y-2">
+                  <div>
+                    <h6 className="text-[9px] font-black uppercase tracking-wider text-gray-400">
+                      2. Persetujuan (Approve)
+                    </h6>
+                    
+                    {!canApprove ? (
+                      <p className="text-[10px] font-medium text-red-500 mt-1 leading-relaxed">
+                        Anda tidak memiliki wewenang persetujuan untuk tugas ini.
+                        {profile?.role === 'staff' 
+                          ? ' Staf tidak diizinkan menyetujui.' 
+                          : ' Hanya superadmin atau pembuat tugas yang berhak.'}
+                      </p>
+                    ) : (
+                      <p className="text-[10px] font-medium text-gray-500 mt-1 leading-relaxed">
+                        {task.extensionRequested 
+                          ? "Ajukan tenggat waktu baru di bawah ini dan berikan izin perpanjangan." 
+                          : "Menunggu adanya pengajuan perpanjangan aktif dari pelaksana."}
+                      </p>
+                    )}
+                  </div>
+
+                  {canApprove && task.extensionRequested ? (
+                    <div className="space-y-2 pt-1 border-t border-gray-50">
+                      <div className="space-y-1">
+                        <span className="text-[8px] font-black uppercase tracking-widest text-gray-400">
+                          Tenggat Baru:
+                        </span>
+                        <input
+                          type="date"
+                          value={newDeadlineDate}
+                          onChange={(e) => setNewDeadlineDate(e.target.value)}
+                          className="w-full text-[10px] p-2 border border-gray-200 rounded-lg bg-gray-50 font-bold text-gray-700"
+                        />
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await updateTaskExtensionStatus(task.id, 'approved', org.id, profile?.displayName || 'User', newDeadlineDate);
+                          }}
+                          className="flex-1 py-1.5 bg-green-650 hover:bg-green-750 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center"
+                        >
+                          Setujui
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await updateTaskExtensionStatus(task.id, 'rejected', org.id, profile?.displayName || 'User');
+                          }}
+                          className="flex-1 py-1.5 bg-red-650 hover:bg-red-750 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center"
+                        >
+                          Tolak
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-2 px-2.5 bg-gray-50 text-gray-400 text-[9px] font-bold rounded-lg text-center border border-gray-100 font-mono">
+                      {task.extensionRequested ? "Akses Dibatasi" : "Belum Ada Pengajuan"}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
 
 
