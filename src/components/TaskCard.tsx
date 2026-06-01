@@ -64,6 +64,25 @@ import {
 } from "react-simple-wysiwyg";
 import { supabase } from "../lib/supabase";
 
+const formatDeadline = (deadlineStr: string) => {
+  if (!deadlineStr) return '';
+  try {
+    const d = new Date(deadlineStr);
+    if (isNaN(d.getTime())) return deadlineStr;
+    const options: Intl.DateTimeFormatOptions = {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    };
+    return d.toLocaleString('id-ID', options).replace(/\./g, ':');
+  } catch (e) {
+    return deadlineStr;
+  }
+};
+
 interface TaskCardProps {
   key?: string | number;
   user: AppUser;
@@ -117,7 +136,13 @@ export default function TaskCard({
   const [newDeadlineDate, setNewDeadlineDate] = useState(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 2);
-    return tomorrow.toISOString().substring(0, 10);
+    tomorrow.setHours(17, 0, 0, 0); // Default to 5 PM
+    const yyyy = tomorrow.getFullYear();
+    const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const dd = String(tomorrow.getDate()).padStart(2, '0');
+    const hh = String(tomorrow.getHours()).padStart(2, '0');
+    const min = String(tomorrow.getMinutes()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
   });
   const [memberProfiles, setMemberProfiles] = useState<UserProfile[]>([]);
   const [comments, setComments] = useState<any[]>([]);
@@ -163,6 +188,9 @@ export default function TaskCard({
   // Manager can delete any task/subtask if it was NOT created by a superadmin (e.g., created by manager or staff).
   // Staff can never delete tasks or subtasks.
   const canDelete = isSuperadmin || (isManager && (task.createdBy === user.uid || (creatorRole && creatorRole !== "superadmin")));
+
+  // Superadmin and Manager can edit tasks. Staff cannot edit tasks.
+  const canEdit = isSuperadmin || isManager;
 
   useEffect(() => {
     if (task.note !== undefined) {
@@ -485,7 +513,12 @@ export default function TaskCard({
                   type="button"
                   onClick={async (e) => {
                      e.stopPropagation();
-                     await requestTaskExtension(task.id, task.createdBy || '', org.id, profile?.displayName || 'User', task.title);
+                     try {
+                        await requestTaskExtension(task.id, task.createdBy || '', org.id, profile?.displayName || 'User', task.title);
+                        alert("Pengajuan perpanjangan waktu berhasil dikirim ke atasan Anda!");
+                     } catch (err: any) {
+                        alert("Gagal mengajukan perpanjangan: " + (err.message || err));
+                     }
                   }}
                   className={buttonClass}
               >
@@ -640,7 +673,7 @@ export default function TaskCard({
             </span>
             <span className="px-2.5 py-1 bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
               <Clock className="w-3 h-3" />
-              {task.deadline}
+              {formatDeadline(task.deadline)}
             </span>
             {task.initialAmount !== undefined && task.initialAmount > 0 && (
               <span className="px-2.5 py-1 bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
@@ -790,40 +823,42 @@ export default function TaskCard({
                 {isEditing ? 'Editing Mode' : 'View Mode'}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (isBlockedByDeadline) {
-                    alert("Tenggat waktu tugas sudah terlewati! Anda harus mengajukan perpanjangan waktu terlebih dahulu.");
-                    return;
-                  }
-                  setIsEditing(!isEditing);
-                }}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-1.5 border ${
-                  isEditing
-                    ? 'bg-orange-600 border-orange-500 text-white hover:bg-orange-700 shadow-md shadow-orange-500/10'
-                    : 'bg-orange-50 border-orange-100 text-orange-600 hover:bg-orange-100'
-                } ${isBlockedByDeadline ? 'opacity-55 cursor-not-allowed' : ''}`}
-              >
-                {isEditing ? (
-                  <>
-                    <svg className="w-3.5 h-3.5 stroke-[2.5]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    Selesai
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-3.5 h-3.5 stroke-[2.5]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path d="M12 20h9" />
-                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                    </svg>
-                    Edit
-                  </>
-                )}
-              </button>
+             <div className="flex items-center gap-2">
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isBlockedByDeadline) {
+                      alert("Tenggat waktu tugas sudah terlewati! Anda harus mengajukan perpanjangan waktu terlebih dahulu.");
+                      return;
+                    }
+                    setIsEditing(!isEditing);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-1.5 border ${
+                    isEditing
+                      ? 'bg-orange-600 border-orange-500 text-white hover:bg-orange-700 shadow-md shadow-orange-500/10'
+                      : 'bg-orange-50 border-orange-100 text-orange-600 hover:bg-orange-100'
+                  } ${isBlockedByDeadline ? 'opacity-55 cursor-not-allowed' : ''}`}
+                >
+                  {isEditing ? (
+                    <>
+                      <svg className="w-3.5 h-3.5 stroke-[2.5]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                      Selesai
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5 stroke-[2.5]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                      Edit
+                    </>
+                  )}
+                </button>
+              )}
 
               {canDelete && (isConfirmingDelete ? (
                 <div className="flex items-center gap-1.5 bg-red-50 border border-red-100 p-1 rounded-xl shadow-xs">
@@ -1422,7 +1457,12 @@ export default function TaskCard({
                       type="button"
                       onClick={async (e) => {
                         e.stopPropagation();
-                        await requestTaskExtension(task.id, task.createdBy || '', org.id, profile?.displayName || 'User', task.title);
+                        try {
+                          await requestTaskExtension(task.id, task.createdBy || '', org.id, profile?.displayName || 'User', task.title);
+                          alert("Pengajuan perpanjangan waktu berhasil dikirim ke atasan Anda!");
+                        } catch (err: any) {
+                          alert("Gagal mengajukan perpanjangan: " + (err.message || err));
+                        }
                       }}
                       className={`w-full py-2 px-2 text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center flex items-center justify-center gap-1 ${
                         isDeadlinePassed 
@@ -1466,7 +1506,7 @@ export default function TaskCard({
                           Tenggat Baru:
                         </span>
                         <input
-                          type="date"
+                          type="datetime-local"
                           value={newDeadlineDate}
                           onChange={(e) => setNewDeadlineDate(e.target.value)}
                           className="w-full text-[10px] p-2 border border-gray-200 rounded-lg bg-gray-50 font-bold text-gray-700"

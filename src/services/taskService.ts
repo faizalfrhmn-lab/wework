@@ -9,9 +9,15 @@ const serializeNote = (assigneeId: string | string[] | null, noteText: string | 
   return JSON.stringify({ assigneeIds, assigneeId: singleAssigneeId, text: noteText || '' });
 };
 
-const parseNote = (rawNote: string | null): { assigneeIds: string[]; assigneeId: string | null; text: string } => {
+const parseNote = (rawNote: string | null): { 
+  assigneeIds: string[]; 
+  assigneeId: string | null; 
+  text: string;
+  extensionRequested: boolean;
+  extensionStatus: 'pending' | 'approved' | 'rejected' | null;
+} => {
   if (!rawNote) {
-    return { assigneeIds: [], assigneeId: null, text: '' };
+    return { assigneeIds: [], assigneeId: null, text: '', extensionRequested: false, extensionStatus: null };
   }
   const trimmed = rawNote.trim();
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
@@ -24,24 +30,27 @@ const parseNote = (rawNote: string | null): { assigneeIds: string[]; assigneeId:
       return {
         assigneeIds,
         assigneeId: parsed.assigneeId || assigneeIds[0] || null,
-        text: parsed.text || ''
+        text: parsed.text || '',
+        extensionRequested: !!parsed.extensionRequested,
+        extensionStatus: parsed.extensionStatus || null
       };
     } catch (e) {
       // Fallback
     }
   }
-  return { assigneeIds: [], assigneeId: null, text: rawNote };
+  return { assigneeIds: [], assigneeId: null, text: rawNote, extensionRequested: false, extensionStatus: null };
 };
 
 const transformTask = (dbTask: any): Task => {
   if (!dbTask) return dbTask;
-  const { assigneeIds, assigneeId, text } = parseNote(dbTask.note);
+  const { assigneeIds, assigneeId, text, extensionRequested, extensionStatus } = parseNote(dbTask.note);
   return {
     ...dbTask,
     assigneeId: assigneeId || undefined,
     assigneeIds: assigneeIds || [],
     note: text || '',
-    // createdBy: dbTask.createdBy // Removed temporarily
+    extensionRequested: extensionRequested || false,
+    extensionStatus: extensionStatus || undefined,
   };
 };
 
@@ -633,29 +642,41 @@ export const updateTaskNote = async (taskId: string, text: string) => {
 
 export const requestTaskExtension = async (taskId: string, creatorId: string, orgId: string, requesterName: string, taskTitle: string) => {
   try {
-    const { error } = await supabase
+    // Fetch task info to get note details and folderId
+    const { data: dbTask, error: fetchErr } = await supabase
+      .from('tasks')
+      .select('note, folderId, title')
+      .eq('id', taskId)
+      .single();
+    if (fetchErr) throw fetchErr;
+
+    const currentNoteRaw = dbTask?.note || '';
+    let parsed: any = { assigneeIds: [] as string[], assigneeId: null as string | null, text: '' };
+    
+    if (currentNoteRaw.trim().startsWith('{') && currentNoteRaw.trim().endsWith('}')) {
+      try {
+        parsed = JSON.parse(currentNoteRaw);
+      } catch (e) {}
+    } else {
+      parsed.text = currentNoteRaw;
+    }
+
+    const updatedNote = JSON.stringify({
+      ...parsed,
+      extensionRequested: true,
+      extensionStatus: 'pending'
+    });
+
+    const { error: updateErr } = await supabase
       .from('tasks')
       .update({
-        extensionRequested: true,
-        extensionStatus: 'pending'
+        note: updatedNote
       })
       .eq('id', taskId);
-    if (error) throw error;
+    if (updateErr) throw updateErr;
     
-    // Fetch task info to get folderId (for division deep-linking in notification)
-    let folderId = '';
-    try {
-      const { data: dbTask } = await supabase
-        .from('tasks')
-        .select('folderId')
-        .eq('id', taskId)
-        .single();
-      if (dbTask) {
-        folderId = dbTask.folderId || '';
-      }
-    } catch (folderErr) {
-      console.error('Failed to pre-fetch folder details for extension notification:', folderErr);
-    }
+    const folderId = dbTask?.folderId || '';
+    const resolvedTitle = dbTask?.title || taskTitle;
 
     const notifyUserIds = new Set<string>();
     if (creatorId) {
@@ -696,7 +717,7 @@ export const requestTaskExtension = async (taskId: string, creatorId: string, or
         orgId,
         'deadline',
         'Permintaan Perpanjangan Deadline',
-        `${requesterName} meminta perpanjangan deadline untuk tugas "${taskTitle}".`,
+        `${requesterName} meminta perpanjangan deadline untuk tugas "${resolvedTitle}".`,
         { view: 'folders', divisionId: folderId, taskId: taskId }
       );
     }
@@ -714,28 +735,48 @@ export const updateTaskExtensionStatus = async (
   newDeadline?: string
 ) => {
   try {
-    const updateData: any = {
+    // Fetch current task row to read existing note structures
+    const { data: dbTask, error: fetchErr } = await supabase
+      .from('tasks')
+      .select('note, title, folderId, deadline')
+      .eq('id', taskId)
+      .single();
+    if (fetchErr) throw fetchErr;
+
+    const currentNoteRaw = dbTask?.note || '';
+    let parsed: any = { assigneeIds: [] as string[], assigneeId: null as string | null, text: '' };
+    
+    if (currentNoteRaw.trim().startsWith('{') && currentNoteRaw.trim().endsWith('}')) {
+      try {
+        parsed = JSON.parse(currentNoteRaw);
+      } catch (e) {}
+    } else {
+      parsed.text = currentNoteRaw;
+    }
+
+    const updatedNote = JSON.stringify({
+      ...parsed,
       extensionRequested: false,
       extensionStatus: status
+    });
+
+    const updateData: any = {
+      note: updatedNote
     };
     if (status === 'approved' && newDeadline) {
       updateData.deadline = newDeadline;
     }
-    const { error } = await supabase
+
+    const { error: updateErr } = await supabase
       .from('tasks')
       .update(updateData)
       .eq('id', taskId);
-    if (error) throw error;
+    if (updateErr) throw updateErr;
 
     // Send realtime notification back to assignees so they know it is approved/rejected
     try {
-      const { data: dbTask } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('id', taskId)
-        .single();
       if (dbTask) {
-        const { assigneeIds } = parseNote(dbTask.note);
+        const { assigneeIds } = parseNote(updatedNote); // Use the updatedNote values we just built
         if (assigneeIds && assigneeIds.length > 0) {
           const statusLabel = status === 'approved' ? 'DISETUJUI & PERPANJANG' : 'DITOLAK';
           const deadlineText = status === 'approved' && newDeadline 

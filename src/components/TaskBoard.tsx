@@ -18,12 +18,31 @@ interface TaskBoardProps {
   onClearSelectedTask?: () => void;
 }
 
-const getTodayDateString = () => {
+const getTodayDateTimeString = () => {
   const today = new Date();
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  return `${yyyy}-${mm}-${dd}T17:00`; // Default to 5 PM
+};
+
+const formatDeadline = (deadlineStr: string) => {
+  if (!deadlineStr) return '';
+  try {
+    const d = new Date(deadlineStr);
+    if (isNaN(d.getTime())) return deadlineStr;
+    const options: Intl.DateTimeFormatOptions = {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    };
+    return d.toLocaleString('id-ID', options).replace(/\./g, ':');
+  } catch (e) {
+    return deadlineStr;
+  }
 };
 
 export default function TaskBoard({ 
@@ -37,6 +56,7 @@ export default function TaskBoard({
   onClearSelectedTask 
 }: TaskBoardProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const isStaff = profile?.role === "staff";
 
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
@@ -53,7 +73,7 @@ export default function TaskBoard({
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskNote, setNewTaskNote] = useState('');
   const [newTaskCategory, setNewTaskCategory] = useState('General');
-  const [newTaskDeadline, setNewTaskDeadline] = useState(getTodayDateString());
+  const [newTaskDeadline, setNewTaskDeadline] = useState(getTodayDateTimeString());
   const [newTaskAmount, setNewTaskAmount] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [collapsedColumns, setCollapsedColumns] = useState<string[]>([]);
@@ -108,10 +128,15 @@ export default function TaskBoard({
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
     
+    if (isStaff) {
+      setFormError('Anggota dengan peran Staf tidak diizinkan untuk membuat tugas baru.');
+      return;
+    }
+
     setFormError(null);
     setIsSubmitting(true);
     try {
-      const deadlineVal = newTaskDeadline || getTodayDateString();
+      const deadlineVal = newTaskDeadline || getTodayDateTimeString();
       const taskId = await createTask(
         org.id, 
         divisionId, 
@@ -150,7 +175,7 @@ export default function TaskBoard({
       setNewTaskTitle('');
       setNewTaskNote('');
       setNewTaskCategory('General');
-      setNewTaskDeadline(getTodayDateString());
+      setNewTaskDeadline(getTodayDateTimeString());
       setNewTaskAmount(0);
       setNewTaskAssigneeIds([]);
       setSubtasks([]);
@@ -331,7 +356,7 @@ export default function TaskBoard({
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
-                      {status === 'todo' && (
+                      {status === 'todo' && !isStaff && (
                         <button 
                           onClick={() => setIsModalOpen(true)}
                           className={`p-1 rounded-md transition-colors ${
@@ -417,7 +442,7 @@ export default function TaskBoard({
                           </span>
                         </td>
                         <td className="px-4 py-4">{task.category}</td>
-                        <td className="px-4 py-4 font-medium text-gray-400">{task.deadline}</td>
+                        <td className="px-4 py-4 font-medium text-gray-400">{formatDeadline(task.deadline)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -489,7 +514,7 @@ export default function TaskBoard({
           <div className="space-y-2">
             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Deadline (Optional)</label>
             <input 
-              type="date"
+              type="datetime-local"
               value={newTaskDeadline}
               onChange={(e) => setNewTaskDeadline(e.target.value)}
               className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm font-medium focus:ring-4 focus:ring-orange-500/10 focus:bg-white transition-all outline-none"
