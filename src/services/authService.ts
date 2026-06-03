@@ -4,7 +4,8 @@ import { ensureSuperadminMemberships } from './orgService';
 
 export const signUp = async (email: string, password: string, fullName: string) => {
   try {
-    const { data, error } = await supabase.auth.signUp({
+    // Attempt standard Supabase Auth Sign Up
+    const { data: authData, error: authErr } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -13,8 +14,100 @@ export const signUp = async (email: string, password: string, fullName: string) 
         }
       }
     });
-    if (error) throw error;
-    return data;
+
+    if (authErr) {
+      // Check if error is related to user already exists in Supabase Auth
+      const isMsgExists = authErr.message?.toLowerCase().includes('already') || 
+                          authErr.message?.toLowerCase().includes('exist') || 
+                          authErr.status === 422;
+      
+      if (isMsgExists) {
+        // Since they exist in Supabase Auth, check if their profile exists in public.users table
+        const { data: existingProfile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (existingProfile) {
+          // Profile exists! They are already fully registered in the system
+          throw new Error('Email sudah terdaftar. Silakan gunakan email lain atau masuk.');
+        } else {
+          // Profile does NOT exist (meaning they were deleted by Superadmin!).
+          // Let's sign them in with the password they provided!
+          const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+            email,
+            password
+          });
+
+          if (signInErr) {
+            throw new Error('Email Anda sudah terdaftar di sistem otentikasi. Silakan masuk menggunakan kata sandi Anda sebelumnya, ATAU klik opsi "Lupa Password" di layar masuk untuk menyetel ulang kata sandi baru Anda.');
+          }
+
+          if (signInData?.user) {
+            // Success! Recreate user profile from scratch since they were deleted
+            const isSuper = email === 'dininurulkhairina@gmail.com';
+            const newProfile = {
+              id: signInData.user.id,
+              email,
+              displayName: fullName || email,
+              role: isSuper ? 'superadmin' : 'staff',
+              createdAt: new Date().toISOString()
+            };
+            const { error: insertError } = await supabase.from('users').insert(newProfile);
+            if (insertError) throw insertError;
+            if (isSuper) {
+              await ensureSuperadminMemberships(signInData.user.id);
+            }
+            return signInData;
+          }
+        }
+      }
+      throw authErr;
+    }
+
+    // Auth Sign Up succeeded! Let's check if there is an existing profile pre-created by the Admin (with a random UUID)
+    if (authData?.user) {
+      const { data: preCreatedProfile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (preCreatedProfile) {
+        // An Admin pre-created this profile. We update the ID to the correct authenticated ID, preserving their name/role/data!
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            id: authData.user.id,
+            displayName: fullName || preCreatedProfile.displayName || email,
+            createdAt: new Date().toISOString()
+          })
+          .eq('id', preCreatedProfile.id); // Update by previous temp id
+        
+        if (updateError) {
+          console.error('Error updating pre-created user profile:', updateError);
+        }
+      } else {
+        // Create a completely new user profile
+        const isSuper = email === 'dininurulkhairina@gmail.com';
+        const newProfile = {
+          id: authData.user.id,
+          email,
+          displayName: fullName || email,
+          role: isSuper ? 'superadmin' : 'staff',
+          createdAt: new Date().toISOString()
+        };
+        const { error: insertError } = await supabase.from('users').insert(newProfile);
+        if (insertError) {
+          console.error('Error inserting initial profile:', insertError);
+        }
+        if (isSuper) {
+          await ensureSuperadminMemberships(authData.user.id);
+        }
+      }
+    }
+    return authData;
   } catch (error) {
     console.error('Sign up error:', error);
     throw error;
@@ -23,44 +116,53 @@ export const signUp = async (email: string, password: string, fullName: string) 
 
 export const signIn = async (email: string, password: string) => {
   try {
+    // Attempt normal Supabase Auth login
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password
     });
-    if (!error && data?.user) {
-      localStorage.removeItem('local_auth_user');
-      return data;
+    
+    if (error) {
+      throw error;
     }
-    if (error) throw error;
-    return data;
-  } catch (error: any) {
-    console.log('Auth check failed, looking for password override in database...', error.message);
-    try {
+
+    if (data?.user) {
+      localStorage.removeItem('local_auth_user');
+
+      // Check if their profile exists in public users table
       const { data: userProfile, error: profileErr } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email)
+        .eq('id', data.user.id)
         .maybeSingle();
 
-      if (!profileErr && userProfile && userProfile.tempPassword) {
-        if (userProfile.tempPassword === password) {
-          const mockUser = {
-            uid: userProfile.id,
-            id: userProfile.id,
-            email: userProfile.email,
-            displayName: userProfile.displayName,
-            photoURL: userProfile.photoURL,
-            isLocalSession: true
-          };
-          localStorage.setItem('local_auth_user', JSON.stringify(mockUser));
-          // Success, trigger reload to apply session
-          window.location.reload();
-          return { user: mockUser };
+      if (profileErr) throw profileErr;
+
+      // If they don't have a profile in the public table (deleted by Superadmin), 
+      // but they signed in successfully (authenticated!), we automatically recreate their profile!
+      // This is a beautiful automatic recovery: they start from scratch (role: staff)
+      if (!userProfile) {
+        const isSuper = email === 'dininurulkhairina@gmail.com';
+        const newProfile = {
+          id: data.user.id,
+          email,
+          displayName: data.user.user_metadata?.full_name || email,
+          role: isSuper ? 'superadmin' : 'staff',
+          createdAt: new Date().toISOString()
+        };
+        const { error: insertError } = await supabase.from('users').insert(newProfile);
+        if (insertError) {
+          console.error('Error auto-recreating deleted profile:', insertError);
+        }
+        if (isSuper) {
+          await ensureSuperadminMemberships(data.user.id);
         }
       }
-    } catch (e) {
-      console.error('Password override fallback check failed:', e);
+      return data;
     }
+    return data;
+  } catch (error: any) {
+    console.error('Sign in error:', error);
     throw error;
   }
 };
@@ -86,17 +188,26 @@ export const logout = async () => {
   window.location.reload();
 };
 
+export const sendPasswordReset = async (email: string) => {
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+    if (error) throw error;
+  } catch (error) {
+    console.error('Reset password error:', error);
+    throw error;
+  }
+};
+
 export const updatePassword = async (newPassword: string) => {
   try {
     const localUserStr = localStorage.getItem('local_auth_user');
     
     if (localUserStr) {
       const localUser = JSON.parse(localUserStr);
-      const { error } = await supabase
-        .from('users')
-        .update({ tempPassword: newPassword })
-        .eq('id', localUser.uid);
-      if (error) throw error;
+      localUser.tempPassword = newPassword;
+      localStorage.setItem('local_auth_user', JSON.stringify(localUser));
     } else {
       const { error } = await supabase.auth.updateUser({
         password: newPassword
@@ -185,7 +296,7 @@ export const subscribeToUserProfile = (userId: string, callback: (profile: UserP
         callback(profile);
       }
     } else {
-      // Create profile if not exist (auto-creation on first fetch)
+      // Create profile and recover gracefully for any authenticated user whose profile was deleted from the database
       try {
         const { data: userData } = await supabase.auth.getUser();
         if (userData?.user && userData.user.id === userId) {
@@ -193,8 +304,8 @@ export const subscribeToUserProfile = (userId: string, callback: (profile: UserP
           const newProfile = {
             id: userId,
             email: userData.user.email,
-            displayName: userData.user.user_metadata.full_name || userData.user.email,
-            photoURL: userData.user.user_metadata.avatar_url,
+            displayName: userData.user.user_metadata?.full_name || userData.user.email || 'Workspace Member',
+            photoURL: userData.user.user_metadata?.avatar_url || '',
             role: isSuper ? 'superadmin' : 'staff',
             createdAt: new Date().toISOString()
           };
@@ -204,10 +315,17 @@ export const subscribeToUserProfile = (userId: string, callback: (profile: UserP
               ensureSuperadminMemberships(userId);
             }
             callback(newProfile as UserProfile);
+            return;
+          } else {
+            console.error('Failed to auto-recreate missing profile:', insertError);
           }
-        } else {
-          callback(null);
         }
+        
+        // Non-authenticated or failed recovery
+        console.warn('User profile has been deleted by Superadmin. Forcing logout.');
+        supabase.auth.signOut().catch(() => {});
+        localStorage.removeItem('local_auth_user');
+        callback(null);
       } catch (authErr) {
         console.error('getUser failed inside profile subscription:', authErr);
         callback(null);
@@ -242,11 +360,14 @@ export const subscribeToUserProfile = (userId: string, callback: (profile: UserP
 
 export const updateUserProfile = async (userId: string, data: Partial<UserProfile>) => {
   try {
-    const { error } = await supabase
-      .from('users')
-      .update(data)
-      .eq('id', userId);
-    if (error) throw error;
+    const { tempPassword, ...cleanData } = data as any;
+    if (Object.keys(cleanData).length > 0) {
+      const { error } = await supabase
+        .from('users')
+        .update(cleanData)
+        .eq('id', userId);
+      if (error) throw error;
+    }
   } catch (error) {
     console.error('Update profile error:', error);
   }
@@ -255,11 +376,13 @@ export const updateUserProfile = async (userId: string, data: Partial<UserProfil
 export const adminCreateUser = async (profile: Partial<UserProfile> & { email: string }) => {
   try {
     const id = crypto.randomUUID();
+    const { tempPassword, ...cleanProfile } = profile as any;
+    
     const { error } = await supabase
       .from('users')
       .insert({
         id,
-        ...profile,
+        ...cleanProfile,
         createdAt: new Date().toISOString(),
         role: profile.role || 'staff'
       });

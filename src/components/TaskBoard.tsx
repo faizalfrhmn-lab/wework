@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, ListTodo, X, ChevronLeft, ChevronRight, Minimize2, Maximize2, RefreshCw, LayoutDashboard, LayoutList, User } from 'lucide-react';
 import { Editor, Toolbar, BtnBold, BtnItalic, BtnLink, BtnBulletList, BtnNumberedList, EditorProvider } from 'react-simple-wysiwyg';
 import { Task, UserProfile, Organization, AppUser } from '../types';
@@ -17,6 +17,68 @@ interface TaskBoardProps {
   setIsFocusMode: (v: boolean) => void;
   onClearSelectedTask?: () => void;
 }
+
+const canUserSeeTask = (task: Task, userUid: string, userRole: 'superadmin' | 'manager' | 'staff', allUsers: UserProfile[]): boolean => {
+  if (userRole === 'superadmin') return true;
+
+  const creator = allUsers.find(u => u.id === task.createdBy);
+  const creatorRole = creator?.role;
+
+  const assignees = task.assigneeIds || (task.assigneeId ? [task.assigneeId] : []);
+  const isUserAssignee = assignees.includes(userUid);
+
+  // 1. Task Pribadi
+  if (task.isPersonal) {
+    return task.createdBy === userUid;
+  }
+
+  // 2. Task Private (Super Admin to Manager)
+  const isSuperAdminCreator = creatorRole === 'superadmin' || task.createdBy === 'superadmin';
+  const hasManagerAssignee = assignees.some(id => {
+    const u = allUsers.find(usr => usr.id === id);
+    return u?.role === 'manager';
+  });
+
+  if (isSuperAdminCreator && hasManagerAssignee) {
+    if (userRole === 'manager') {
+      return isUserAssignee;
+    }
+    if (userRole === 'staff') {
+      return false;
+    }
+  }
+
+  // 3. Task Manager ke Staff
+  const isManagerCreator = creatorRole === 'manager';
+  const hasStaffAssignee = assignees.some(id => {
+    const u = allUsers.find(usr => usr.id === id);
+    return u?.role === 'staff';
+  });
+
+  if (isManagerCreator && hasStaffAssignee) {
+    if (userRole === 'manager') {
+      return task.createdBy === userUid || isUserAssignee;
+    }
+    if (userRole === 'staff') {
+      return true;
+    }
+  }
+
+  // Fallbacks:
+  if (userRole === 'staff') {
+    const isAnyStaffAssignee = assignees.some(id => {
+      const u = allUsers.find(usr => usr.id === id);
+      return u?.role === 'staff';
+    });
+    return isUserAssignee || isAnyStaffAssignee || task.createdBy === userUid;
+  }
+
+  if (userRole === 'manager') {
+    return task.createdBy === userUid || isUserAssignee;
+  }
+
+  return true;
+};
 
 const getTodayDateTimeString = () => {
   const today = new Date();
@@ -80,9 +142,14 @@ export default function TaskBoard({
   const [showOnlyMyTasks, setShowOnlyMyTasks] = useState(false);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [newTaskAssigneeIds, setNewTaskAssigneeIds] = useState<string[]>([]);
+  const [newTaskIsPersonal, setNewTaskIsPersonal] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [subtasks, setSubtasks] = useState<{ title: string; initialAmount: number }[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'todo' | 'in-progress' | 'review' | 'revision' | 'done'>('all');
+
+  const visibleTasks = useMemo(() => {
+    return tasks.filter(t => canUserSeeTask(t, user.uid, (profile?.role || 'staff') as any, allUsers));
+  }, [tasks, user.uid, profile?.role, allUsers]);
 
   const [selectedTaskIdModal, setSelectedTaskIdModal] = useState<string | null>(null);
 
@@ -128,15 +195,15 @@ export default function TaskBoard({
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
     
-    if (isStaff) {
-      setFormError('Anggota dengan peran Staf tidak diizinkan untuk membuat tugas baru.');
-      return;
-    }
+    // Staff can only create personal tasks.
+    const isPersonalTask = isStaff || newTaskIsPersonal;
 
     setFormError(null);
     setIsSubmitting(true);
     try {
       const deadlineVal = newTaskDeadline || getTodayDateTimeString();
+      const finalAssigneeId = isPersonalTask ? [user.uid] : (newTaskAssigneeIds.length > 0 ? newTaskAssigneeIds : null);
+      
       const taskId = await createTask(
         org.id, 
         divisionId, 
@@ -146,9 +213,10 @@ export default function TaskBoard({
         org.members,
         deadlineVal,
         newTaskCategory.toLowerCase().includes('finance') ? newTaskAmount : 0,
-        newTaskAssigneeIds.length > 0 ? newTaskAssigneeIds : null,
+        finalAssigneeId,
         user.uid,
-        profile?.displayName || user.displayName || user.email || 'Seseorang'
+        profile?.displayName || user.displayName || user.email || 'Seseorang',
+        isPersonalTask
       );
 
       if (!taskId) {
@@ -178,6 +246,7 @@ export default function TaskBoard({
       setNewTaskDeadline(getTodayDateTimeString());
       setNewTaskAmount(0);
       setNewTaskAssigneeIds([]);
+      setNewTaskIsPersonal(false);
       setSubtasks([]);
       setIsModalOpen(false);
     } catch (err: any) {
@@ -215,17 +284,30 @@ export default function TaskBoard({
                  {categories.map(c => <option key={c} value={c} className="capitalize">{c.replace('-', ' ')}</option>)}
                </select>
 
-               <button 
-                  onClick={() => setShowOnlyMyTasks(!showOnlyMyTasks)}
-                  className={`p-3 rounded-2xl transition-all ${
-                    showOnlyMyTasks 
-                      ? 'bg-orange-500 text-white' 
-                      : isFocusMode ? 'bg-white/10 text-white' : 'bg-white border border-gray-100 shadow-sm text-gray-900'
-                  }`}
-                  title={showOnlyMyTasks ? 'Showing My Tasks' : 'Show All Tasks'}
-               >
-                  <User className="w-4 h-4" />
-               </button>
+              {!isStaff ? (
+                <button 
+                   onClick={() => setShowOnlyMyTasks(!showOnlyMyTasks)}
+                   className={`p-3 rounded-2xl transition-all ${
+                     showOnlyMyTasks 
+                       ? 'bg-orange-500 text-white' 
+                       : isFocusMode ? 'bg-white/10 text-white' : 'bg-white border border-gray-100 shadow-sm text-gray-900'
+                   }`}
+                   title={showOnlyMyTasks ? 'Showing My Tasks' : 'Show All Tasks'}
+                >
+                   <User className="w-4 h-4" />
+                </button>
+              ) : (
+                <div 
+                   className={`px-3 py-2 rounded-2xl border flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${
+                     isFocusMode 
+                       ? 'bg-orange-500/20 border-orange-500/30 text-white' 
+                       : 'bg-orange-50 border-orange-100 text-orange-650'
+                   }`}
+                >
+                   <User className="w-3.5 h-3.5" />
+                   Tugas Saya
+                </div>
+              )}
              </div>
 
              <div className="flex items-center gap-1 bg-gray-100 p-1.5 rounded-2xl">
@@ -291,7 +373,7 @@ export default function TaskBoard({
             <div className="flex gap-6 h-full min-w-max items-start">
             {categories.map((status) => {
               const isCollapsed = collapsedColumns.includes(status);
-              const columnTasks = tasks.filter(t => {
+              const columnTasks = visibleTasks.filter(t => {
                 const isStatusMatch = statusFilter === 'all' ? t.status === status : t.status === status && t.status === statusFilter;
                 const isAssigned = showOnlyMyTasks ? (t.assigneeId === user.uid || t.assigneeIds?.includes(user.uid)) : true;
                 const isSearchMatch = searchQuery ? (t.title?.toLowerCase().includes(searchQuery.toLowerCase()) || t.note?.toLowerCase().includes(searchQuery.toLowerCase())) : true;
@@ -356,7 +438,7 @@ export default function TaskBoard({
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
-                      {status === 'todo' && !isStaff && (
+                      {status === 'todo' && (
                         <button 
                           onClick={() => setIsModalOpen(true)}
                           className={`p-1 rounded-md transition-colors ${
@@ -419,7 +501,7 @@ export default function TaskBoard({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {tasks.filter(t => {
+                    {visibleTasks.filter(t => {
                       const isStatusMatch = statusFilter === 'all' ? true : t.status === statusFilter;
                       const isAssigned = showOnlyMyTasks ? (t.assigneeId === user.uid || t.assigneeIds?.includes(user.uid)) : true;
                       const isSearchMatch = searchQuery ? (t.title?.toLowerCase().includes(searchQuery.toLowerCase()) || t.note?.toLowerCase().includes(searchQuery.toLowerCase())) : true;
@@ -593,47 +675,73 @@ export default function TaskBoard({
           )}
         </div>
 
-        {allUsers.length > 0 && (
-          <div className="space-y-3">
-            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Assign To Users</label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-gray-50/50 p-3 rounded-2xl border border-gray-100 max-h-48 overflow-y-auto no-scrollbar">
-              {allUsers.map(u => {
-                const isSelected = newTaskAssigneeIds.includes(u.id);
-                return (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => {
-                      if (isSelected) {
-                        setNewTaskAssigneeIds(prev => prev.filter(id => id !== u.id));
-                      } else {
-                        setNewTaskAssigneeIds(prev => [...prev, u.id]);
-                      }
-                    }}
-                    className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-left transition-all ${
-                      isSelected
-                        ? 'bg-orange-500/10 border-orange-500/30 text-orange-950 font-semibold'
-                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${
-                      isSelected
-                        ? 'bg-orange-500 border-orange-500 text-white'
-                        : 'border-gray-300 bg-white'
-                    }`}>
-                      {isSelected && (
-                        <svg className="w-2.5 h-2.5 stroke-[3]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </div>
-                    <span className="text-xs truncate">{u.displayName || u.email}</span>
-                  </button>
-                );
-              })}
+        {isStaff ? (
+          <div className="p-4 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-950 text-xs font-semibold">
+            ✨ Tugas ini adalah Tugas Pribadi Anda. Tugas pribadi otomatis ditugaskan ke diri Anda sendiri, tidak memerlukan persetujuan dari atasan, dan dapat Anda hapus kapan saja.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2.5 p-4 rounded-2xl bg-gray-50 border border-gray-100">
+              <input
+                type="checkbox"
+                id="newTaskIsPersonal"
+                checked={newTaskIsPersonal}
+                onChange={(e) => {
+                  setNewTaskIsPersonal(e.target.checked);
+                  if (e.target.checked) {
+                    setNewTaskAssigneeIds([]);
+                  }
+                }}
+                className="w-4 h-4 text-orange-500 focus:ring-orange-500/20 border-gray-300 rounded"
+              />
+              <label htmlFor="newTaskIsPersonal" className="text-xs font-bold text-gray-700 cursor-pointer select-none">
+                Jadikan Tugas Pribadi (Hanya untuk Saya)
+              </label>
             </div>
-            {newTaskAssigneeIds.length === 0 && (
-              <p className="text-[11px] text-gray-400 italic">No one assigned yet. Defaults to self / unassigned.</p>
+
+            {!newTaskIsPersonal && allUsers.length > 0 && (
+              <div className="space-y-3">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Assign To Users</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-gray-50/50 p-3 rounded-2xl border border-gray-100 max-h-48 overflow-y-auto no-scrollbar">
+                  {allUsers.map(u => {
+                    const isSelected = newTaskAssigneeIds.includes(u.id);
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            setNewTaskAssigneeIds(prev => prev.filter(id => id !== u.id));
+                          } else {
+                            setNewTaskAssigneeIds(prev => [...prev, u.id]);
+                          }
+                        }}
+                        className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? 'bg-orange-500/10 border-orange-500/30 text-orange-950 font-semibold'
+                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${
+                          isSelected
+                            ? 'bg-orange-500 border-orange-500 text-white'
+                            : 'border-gray-300 bg-white'
+                        }`}>
+                          {isSelected && (
+                            <svg className="w-2.5 h-2.5 stroke-[3]" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </div>
+                        <span className="text-xs truncate">{u.displayName || u.email}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {newTaskAssigneeIds.length === 0 && (
+                  <p className="text-[11px] text-gray-400 italic">No one assigned yet. Defaults to self / unassigned.</p>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -652,7 +760,7 @@ export default function TaskBoard({
         user={user}
         profile={profile}
         org={org}
-        task={tasks.find(t => t.id === selectedTaskIdModal)!}
+        task={visibleTasks.find(t => t.id === selectedTaskIdModal) || tasks.find(t => t.id === selectedTaskIdModal)!}
         isSelected={true}
         popupOnly={true}
         onCloseDetail={() => setSelectedTaskIdModal(null)}

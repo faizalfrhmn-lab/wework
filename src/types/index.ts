@@ -81,6 +81,8 @@ export interface Task {
   completedAt?: any;
   createdAt: any;
   createdBy?: string; 
+  isPersonal?: boolean;
+  attachments?: { name: string; url: string; type: 'file' | 'link'; uploadedAt: string; uploadedBy: string }[];
 }
 
 export interface LibraryFolder {

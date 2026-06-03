@@ -3,10 +3,16 @@ import { Task, SubTask, LibraryItem } from '../types';
 import { createBatchNotifications, createNotification } from './notificationService';
 
 // Utilities to handle assigneeId when the database column is missing
-const serializeNote = (assigneeId: string | string[] | null, noteText: string | undefined): string => {
+const serializeNote = (assigneeId: string | string[] | null, noteText: string | undefined, isPersonal?: boolean, attachments?: any[]): string => {
   const assigneeIds = Array.isArray(assigneeId) ? assigneeId : (assigneeId ? [assigneeId] : []);
   const singleAssigneeId = assigneeIds[0] || null;
-  return JSON.stringify({ assigneeIds, assigneeId: singleAssigneeId, text: noteText || '' });
+  return JSON.stringify({ 
+    assigneeIds, 
+    assigneeId: singleAssigneeId, 
+    text: noteText || '', 
+    isPersonal: !!isPersonal,
+    attachments: attachments || []
+  });
 };
 
 const parseNote = (rawNote: string | null): { 
@@ -15,9 +21,11 @@ const parseNote = (rawNote: string | null): {
   text: string;
   extensionRequested: boolean;
   extensionStatus: 'pending' | 'approved' | 'rejected' | null;
+  isPersonal: boolean;
+  attachments: any[];
 } => {
   if (!rawNote) {
-    return { assigneeIds: [], assigneeId: null, text: '', extensionRequested: false, extensionStatus: null };
+    return { assigneeIds: [], assigneeId: null, text: '', extensionRequested: false, extensionStatus: null, isPersonal: false, attachments: [] };
   }
   const trimmed = rawNote.trim();
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
@@ -32,18 +40,20 @@ const parseNote = (rawNote: string | null): {
         assigneeId: parsed.assigneeId || assigneeIds[0] || null,
         text: parsed.text || '',
         extensionRequested: !!parsed.extensionRequested,
-        extensionStatus: parsed.extensionStatus || null
+        extensionStatus: parsed.extensionStatus || null,
+        isPersonal: !!parsed.isPersonal,
+        attachments: Array.isArray(parsed.attachments) ? parsed.attachments : []
       };
     } catch (e) {
       // Fallback
     }
   }
-  return { assigneeIds: [], assigneeId: null, text: rawNote, extensionRequested: false, extensionStatus: null };
+  return { assigneeIds: [], assigneeId: null, text: rawNote, extensionRequested: false, extensionStatus: null, isPersonal: false, attachments: [] };
 };
 
 const transformTask = (dbTask: any): Task => {
   if (!dbTask) return dbTask;
-  const { assigneeIds, assigneeId, text, extensionRequested, extensionStatus } = parseNote(dbTask.note);
+  const { assigneeIds, assigneeId, text, extensionRequested, extensionStatus, isPersonal, attachments } = parseNote(dbTask.note);
   return {
     ...dbTask,
     assigneeId: assigneeId || undefined,
@@ -51,10 +61,12 @@ const transformTask = (dbTask: any): Task => {
     note: text || '',
     extensionRequested: extensionRequested || false,
     extensionStatus: extensionStatus || undefined,
+    isPersonal: isPersonal || false,
+    attachments: attachments || []
   };
 };
 
-export const createTask = async (orgId: string, folderId: string, title: string, category: string, note: string, members: string[], deadline: string, initialAmount: number = 0, assigneeId: string | string[] | null = null, creatorId: string, creatorName: string = 'Seseorang') => {
+export const createTask = async (orgId: string, folderId: string, title: string, category: string, note: string, members: string[], deadline: string, initialAmount: number = 0, assigneeId: string | string[] | null = null, creatorId: string, creatorName: string = 'Seseorang', isPersonal: boolean = false) => {
   try {
     const safeMembers = Array.isArray(members) ? members : [];
     const inputAssignees = Array.isArray(assigneeId) ? assigneeId : (assigneeId ? [assigneeId] : []);
@@ -74,7 +86,7 @@ export const createTask = async (orgId: string, folderId: string, title: string,
       console.error('Error adding superadmins to task members:', e);
     }
     
-    const serializedNote = serializeNote(inputAssignees, note);
+    const serializedNote = serializeNote(inputAssignees, note, isPersonal);
     const { data, error } = await supabase
       .from('tasks')
       .insert({
@@ -568,13 +580,13 @@ export const updateTaskAssignee = async (taskId: string, assigneeId: string | st
     
     if (fetchError) throw fetchError;
 
-    const { assigneeIds: oldAssigneeIds, text } = parseNote(dbTask.note);
+    const { assigneeIds: oldAssigneeIds, text, isPersonal, attachments } = parseNote(dbTask.note);
     const newAssigneeIds = Array.isArray(assigneeId) ? assigneeId : (assigneeId ? [assigneeId] : []);
 
     const setsEqual = (a: string[], b: string[]) => a.length === b.length && a.every(x => b.includes(x));
     if (setsEqual(oldAssigneeIds, newAssigneeIds)) return; // No change
 
-    const serializedNote = serializeNote(newAssigneeIds, text);
+    const serializedNote = serializeNote(newAssigneeIds, text, isPersonal, attachments);
     
     let members = Array.isArray(dbTask.members) ? [...dbTask.members] : [];
     for (const singleId of newAssigneeIds) {
@@ -623,8 +635,8 @@ export const updateTaskNote = async (taskId: string, text: string) => {
     
     if (fetchError) throw fetchError;
 
-    const { assigneeIds } = parseNote(dbTask.note);
-    const serializedNote = serializeNote(assigneeIds, text);
+    const { assigneeIds, isPersonal, attachments } = parseNote(dbTask.note);
+    const serializedNote = serializeNote(assigneeIds, text, isPersonal, attachments);
     
     const { error: updateError } = await supabase
       .from('tasks')
@@ -636,6 +648,33 @@ export const updateTaskNote = async (taskId: string, text: string) => {
     if (updateError) throw updateError;
   } catch (error) {
     console.error('Update task note error:', error);
+    throw error;
+  }
+};
+
+export const updateTaskAttachments = async (taskId: string, attachments: any[]) => {
+  try {
+    const { data: dbTask, error: fetchError } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('id', taskId)
+      .single();
+    
+    if (fetchError) throw fetchError;
+
+    const { assigneeIds, text, isPersonal } = parseNote(dbTask.note);
+    const serializedNote = serializeNote(assigneeIds, text, isPersonal, attachments);
+    
+    const { error: updateError } = await supabase
+      .from('tasks')
+      .update({
+        note: serializedNote
+      })
+      .eq('id', taskId);
+
+    if (updateError) throw updateError;
+  } catch (error) {
+    console.error('Update task attachments error:', error);
     throw error;
   }
 };

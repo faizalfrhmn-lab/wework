@@ -43,6 +43,7 @@ import {
   deleteTask,
   requestTaskExtension,
   updateTaskExtensionStatus,
+  updateTaskAttachments,
 } from "../services/taskService";
 import {
   sendMessage,
@@ -128,6 +129,10 @@ export default function TaskCard({
     useState<string>("");
   const [newLinkLabel, setNewLinkLabel] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
+  const [showAddResultAttachment, setShowAddResultAttachment] = useState(false);
+  const [newResultLabel, setNewResultLabel] = useState("");
+  const [newResultUrl, setNewResultUrl] = useState("");
+  const [isFileUploading, setIsFileUploading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [assigneeProfiles, setAssigneeProfiles] = useState<UserProfile[]>([]);
@@ -178,19 +183,52 @@ export default function TaskCard({
   const creatorProfile = memberProfiles.find(p => p.id === task.createdBy);
   const creatorRole = taskCreatorProfile?.role || creatorProfile?.role;
   const isCreatorStaff = creatorRole === "staff";
+  const isPersonalTask = !!task.isPersonal;
 
-  // Superadmin can approve anything. Manager can approve if the creator was staff, or if they themselves created the task.
   // Staff can never approve.
-  const canApprove = isSuperadmin || (isManager && (isCreatorStaff || task.createdBy === user.uid));
+  // Superadmin can always approve anything.
+  // Manager can approve if the task creator is NOT a superadmin.
+  // Personal tasks bypass all approval workflows.
+  const canApprove = !isPersonalTask && (
+    isSuperadmin || (
+      isManager && (
+        task.createdBy === user.uid || 
+        (creatorRole !== undefined && creatorRole !== "superadmin")
+      )
+    )
+  );
+
   const isBlockedByDeadline = isDeadlinePassed && task.extensionStatus !== "approved" && !canApprove;
 
-  // Superadmin can delete any task or subtask.
-  // Manager can delete any task/subtask if it was NOT created by a superadmin (e.g., created by manager or staff).
-  // Staff can never delete tasks or subtasks.
-  const canDelete = isSuperadmin || (isManager && (task.createdBy === user.uid || (creatorRole && creatorRole !== "superadmin")));
+  // Deletion permissions:
+  // - Superadmin can delete any task.
+  // - Manager can delete if they created it or if the creator is not superadmin (including their own personal tasks).
+  // - Staff can ONLY delete their own personal tasks.
+  const canDelete = isSuperadmin || (
+    isPersonalTask && task.createdBy === user.uid
+  ) || (
+    isManager && (
+      task.createdBy === user.uid || 
+      (creatorRole !== undefined && creatorRole !== "superadmin")
+    )
+  );
 
-  // Superadmin and Manager can edit tasks. Staff cannot edit tasks.
-  const canEdit = isSuperadmin || isManager;
+  // Superadmin, Manager, and Staff can edit tasks.
+  const canEdit = isSuperadmin || isManager || (profile?.role === "staff");
+
+  // Restrictions for editing assignee:
+  // - Staff can never change assignee.
+  const canChangeAssignee = isSuperadmin || isManager;
+
+  // Restrictions for editing deadline:
+  // - Managers cannot change deadline if created by Superadmin.
+  // - Staff cannot change deadline if created by Manager or Superadmin.
+  // - But if it's a personal task or they are the creator, they can change it as long as the creator is not their superior.
+  const canChangeDeadline = isSuperadmin || (
+    isManager && (task.createdBy === user.uid || creatorRole !== "superadmin")
+  ) || (
+    profile?.role === "staff" && isPersonalTask
+  );
 
   useEffect(() => {
     if (task.note !== undefined) {
@@ -914,7 +952,7 @@ export default function TaskCard({
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-gray-450">
                 Penerima Tugas & Delegasi (Assignees)
               </span>
-              {isEditing && (
+              {isEditing && canChangeAssignee && (
                 <div className="relative" ref={assigneeDropdownRef}>
                   <button
                     type="button"
@@ -1413,6 +1451,187 @@ export default function TaskCard({
             </div>
           </div>
 
+          {/* Lampiran & Hasil Pekerjaan Section */}
+          <div className="space-y-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center justify-between">
+              <h5 className="text-[11px] font-black uppercase tracking-widest text-gray-800 flex items-center gap-2">
+                <Paperclip className="w-3.5 h-3.5 text-orange-500" />
+                Lampiran & Hasil Pekerjaan
+              </h5>
+              {canEdit && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddResultAttachment(!showAddResultAttachment)}
+                    className="px-2.5 py-1 bg-orange-600/10 hover:bg-orange-600/20 text-orange-600 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1"
+                  >
+                    + Tambah Link / File
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {canEdit && showAddResultAttachment && (
+              <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 mt-2 space-y-4 animate-fadeIn">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Option A: Upload File */}
+                  <div className="p-3 bg-white rounded-xl border border-gray-150 flex flex-col justify-between space-y-2">
+                    <div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-gray-400 block">Option A: Unggah File</span>
+                      <p className="text-[10px] text-gray-500 mt-1">Mengunggah file dokumen, screenshot, PDF, zip, dsb.</p>
+                    </div>
+                    <div>
+                      <input
+                        type="file"
+                        id="result-file-upload"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          
+                          setIsFileUploading(true);
+                          try {
+                            const reader = new FileReader();
+                            reader.onload = async (event) => {
+                              const base64 = event.target?.result as string;
+                              const newAttachment = {
+                                name: file.name,
+                                url: base64,
+                                type: 'file' as const,
+                                uploadedAt: new Date().toISOString(),
+                                uploadedBy: profile?.displayName || user.displayName || user.email || 'Pelaksana'
+                              };
+                              const currentAttachments = task.attachments || [];
+                              await updateTaskAttachments(task.id, [...currentAttachments, newAttachment]);
+                              alert("File hasil pekerjaan berhasil diunggah!");
+                              setIsFileUploading(false);
+                            };
+                            reader.readAsDataURL(file);
+                          } catch (err: any) {
+                            alert("Gagal mengunggah file: " + err.message);
+                            setIsFileUploading(false);
+                          }
+                        }}
+                      />
+                      <label
+                        htmlFor="result-file-upload"
+                        className="w-full py-2 bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center block"
+                      >
+                        {isFileUploading ? "Mengunggah..." : "Pilih & Unggah File"}
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Option B: Add URL Link */}
+                  <div className="p-3 bg-white rounded-xl border border-gray-150 space-y-3">
+                    <div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-gray-400 block">Option B: Tambah Link</span>
+                      <p className="text-[10px] text-gray-500 mt-1">Menambahkan link Google Drive, Figma, GitHub, Website, dsb.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Nama Link (cth: Draft Laporan)"
+                        value={newResultLabel}
+                        onChange={(e) => setNewResultLabel(e.target.value)}
+                        className="w-full text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-orange-500 bg-white"
+                      />
+                      <input
+                        type="url"
+                        placeholder="Masukan URL Link"
+                        value={newResultUrl}
+                        onChange={(e) => setNewResultUrl(e.target.value)}
+                        className="w-full text-xs bg-gray-50 border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-orange-500 bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!newResultLabel.trim() || !newResultUrl.trim()) {
+                            alert("Mohon isi nama link dan URL link dengan lengkap.");
+                            return;
+                          }
+                          try {
+                            const newAttachment = {
+                              name: newResultLabel.trim(),
+                              url: newResultUrl.trim(),
+                              type: 'link' as const,
+                              uploadedAt: new Date().toISOString(),
+                              uploadedBy: profile?.displayName || user.displayName || user.email || 'Pelaksana'
+                            };
+                            const currentAttachments = task.attachments || [];
+                            await updateTaskAttachments(task.id, [...currentAttachments, newAttachment]);
+                            setNewResultLabel("");
+                            setNewResultUrl("");
+                            alert("Link hasil pekerjaan berhasil ditambahkan!");
+                          } catch (err: any) {
+                            alert("Gagal menambahkan link: " + err.message);
+                          }
+                        }}
+                        className="w-full py-2 bg-black text-white text-[10px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                      >
+                        Simpan Link
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {(task.attachments || []).length === 0 ? (
+                <div className="col-span-full py-6 text-center text-xs text-gray-400 italic bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
+                  Belum ada file atau link hasil pekerjaan yang diunggah.
+                </div>
+              ) : (
+                (task.attachments || []).map((attachment, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-orange-500/20 transition-all group"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className={`p-2 rounded-lg shrink-0 ${attachment.type === 'file' ? 'bg-orange-50 text-orange-500' : 'bg-blue-50 text-blue-500'}`}>
+                        {attachment.type === 'file' ? <Paperclip className="w-3.5 h-3.5" /> : <LinkIcon className="w-3.5 h-3.5" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <a
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-bold text-gray-700 hover:text-orange-500 truncate block cursor-pointer"
+                          title={attachment.name}
+                        >
+                          {attachment.name}
+                        </a>
+                        <p className="text-[9px] text-gray-450 truncate">
+                          Upload: {attachment.uploadedBy} • {new Date(attachment.uploadedAt).toLocaleDateString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (confirm(`Hapus "${attachment.name}"?`)) {
+                            try {
+                              const updated = (task.attachments || []).filter((_, i) => i !== idx);
+                              await updateTaskAttachments(task.id, updated);
+                              alert("Lampiran hasil pekerjaan terhapus.");
+                            } catch (err: any) {
+                              alert("Gagal menghapus lampiran: " + err.message);
+                            }
+                          }
+                        }}
+                        className="text-gray-350 hover:text-red-500 p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
           {/* Task Workflow Status */}
           <div className="bg-gray-50/75 p-4 rounded-2xl border border-gray-150 space-y-2 mt-4">
             <span className="text-[10px] font-extrabold uppercase tracking-widest text-gray-500">
@@ -1497,9 +1716,11 @@ export default function TaskCard({
                     {!canApprove ? (
                       <p className="text-[10px] font-medium text-red-500 mt-1 leading-relaxed">
                         Anda tidak memiliki wewenang persetujuan untuk tugas ini.
-                        {profile?.role === 'staff' 
-                          ? ' Staf tidak diizinkan menyetujui.' 
-                          : ' Hanya superadmin atau pembuat tugas yang berhak.'}
+                        {creatorRole === 'superadmin' 
+                          ? ' Tugas ini dibuat oleh Superadmin, persetujuan hanya dapat dilakukan oleh Superadmin.' 
+                          : profile?.role === 'staff' 
+                            ? ' Staf tidak diizinkan menyetujui perpanjangan.' 
+                            : ' Hanya Superadmin atau Atasan yang berwenang.'}
                       </p>
                     ) : (
                       <p className="text-[10px] font-medium text-gray-500 mt-1 leading-relaxed">

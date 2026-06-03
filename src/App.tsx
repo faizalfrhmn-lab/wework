@@ -19,7 +19,7 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-import { subscribeToAuth, signIn, signUp, logout, subscribeToUserProfile } from './services/authService';
+import { subscribeToAuth, signIn, signUp, logout, subscribeToUserProfile, sendPasswordReset, updatePassword } from './services/authService';
 import { subscribeToOrganizations, createOrganization } from './services/orgService';
 import { Organization, Folder, UserProfile, AppUser } from './types';
 import Sidebar from './components/Sidebar';
@@ -40,7 +40,7 @@ export default function App() {
   });
 
   // Auth Form State
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -48,13 +48,28 @@ export default function App() {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [suggestRegister, setSuggestRegister] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [recoveryEmailSent, setRecoveryEmailSent] = useState<string | null>(null);
 
-  const changeAuthMode = (mode: 'login' | 'register') => {
+  const changeAuthMode = (mode: 'login' | 'register' | 'forgot' | 'reset') => {
     setAuthMode(mode);
     setAuthError(null);
     setSuggestRegister(false);
     setShowPassword(false);
+    setRecoveryEmailSent(null);
   };
+
+  // Check for recovery token session on mount
+  useEffect(() => {
+    const checkRecovery = () => {
+      const hash = window.location.hash;
+      if (hash && (hash.includes('type=recovery') || hash.includes('access_token='))) {
+        setAuthMode('reset');
+      }
+    };
+    checkRecovery();
+    window.addEventListener('hashchange', checkRecovery);
+    return () => window.removeEventListener('hashchange', checkRecovery);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', String(isSidebarCollapsed));
@@ -160,11 +175,22 @@ export default function App() {
     try {
       if (authMode === 'login') {
         await signIn(email, password);
-      } else {
+      } else if (authMode === 'register') {
         if (!fullName) throw new Error('Full name is required');
         await signUp(email, password, fullName);
         alert('Cek email kamu untuk konfirmasi, atau matikan "Email Confirmation" di dashboard Supabase agar bisa langsung login.');
         setAuthMode('login');
+      } else if (authMode === 'forgot') {
+        if (!email) throw new Error('Email is required');
+        await sendPasswordReset(email);
+        setRecoveryEmailSent('Tautan setel ulang kata sandi telah dikirim ke email Anda! Silakan periksa inbox (dan kotak SPAM) Anda.');
+      } else if (authMode === 'reset') {
+        if (!password) throw new Error('Password baru wajib diisi');
+        await updatePassword(password);
+        alert('Kata sandi Anda berhasil diperbarui! Silakan masuk menggunakan kata sandi baru Anda.');
+        window.location.hash = '';
+        setAuthMode('login');
+        setPassword('');
       }
     } catch (error: any) {
       let message = error.message || 'Authentication failed';
@@ -237,43 +263,75 @@ export default function App() {
               </div>
             )}
             
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Email Address</label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setSuggestRegister(false); }}
-                placeholder="email@example.com"
-                className="w-full bg-gray-50 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-black outline-none transition-all placeholder:text-gray-300"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Password</label>
-              <div className="relative">
+            {authMode !== 'reset' && (
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Email Address</label>
                 <input
-                  type={showPassword ? "text" : "password"}
+                  type="email"
                   required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); setSuggestRegister(false); }}
-                  placeholder="••••••••"
-                  className="w-full bg-gray-50 border-none rounded-2xl py-4 pl-6 pr-12 focus:ring-2 focus:ring-black outline-none transition-all placeholder:text-gray-300"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setSuggestRegister(false); }}
+                  placeholder="email@example.com"
+                  className="w-full bg-gray-50 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-black outline-none transition-all placeholder:text-gray-300"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
               </div>
-            </div>
+            )}
+
+            {authMode !== 'forgot' && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between pl-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                    {authMode === 'reset' ? 'Password Baru' : 'Password'}
+                  </label>
+                  {authMode === 'login' && (
+                    <button
+                      type="button"
+                      onClick={() => changeAuthMode('forgot')}
+                      className="text-xs font-extrabold text-orange-500 hover:text-orange-600 transition-colors"
+                    >
+                      Lupa Password?
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); setSuggestRegister(false); }}
+                    placeholder="••••••••"
+                    className="w-full bg-gray-50 border-none rounded-2xl py-4 pl-6 pr-12 focus:ring-2 focus:ring-black outline-none transition-all placeholder:text-gray-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {recoveryEmailSent && (
+              <div className="p-4 bg-emerald-50 text-emerald-700 rounded-2xl text-xs font-bold leading-relaxed border border-emerald-100">
+                {recoveryEmailSent}
+              </div>
+            )}
 
             {authError && (
               <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-xs font-bold flex flex-col gap-3">
                 <span>{authError}</span>
+                {(authError.toLowerCase().includes('terdaftar') || authError.toLowerCase().includes('otentikasi') || authError.toLowerCase().includes('sandi') || authError.toLowerCase().includes('password')) && (
+                  <button
+                    type="button"
+                    onClick={() => changeAuthMode('forgot')}
+                    className="w-full py-2.5 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold transition-all text-center text-xs active:scale-95 shadow-md cursor-pointer"
+                  >
+                    Atur Ulang / Lupa Password Sekarang 🔑
+                  </button>
+                )}
                 {suggestRegister && (
                   <button
                     type="button"
@@ -289,22 +347,39 @@ export default function App() {
             <button
               type="submit"
               disabled={isAuthenticating || isDemoLoggingIn}
-              className="w-full bg-black text-white py-4 px-6 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full bg-black text-white py-4 px-6 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
               {isAuthenticating && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
-              {authMode === 'login' ? 'Sign In' : 'Sign Up'}
+              {authMode === 'login' ? 'Sign In' : authMode === 'register' ? 'Sign Up' : authMode === 'forgot' ? 'Kirim Tautan Atur Ulang' : 'Simpan Sandi Baru'}
             </button>
-
-
           </form>
 
-          <div className="text-center pt-4 border-t border-gray-100">
-            <button
-              onClick={() => changeAuthMode(authMode === 'login' ? 'register' : 'login')}
-              className="text-sm text-gray-500 font-medium hover:text-black transition-colors"
-            >
-              {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
-            </button>
+          <div className="text-center pt-4 border-t border-gray-100 flex flex-col gap-2.5">
+            {authMode === 'login' && (
+              <button
+                type="button"
+                onClick={() => changeAuthMode('forgot')}
+                className="text-xs font-bold text-orange-600 hover:text-orange-700 transition-colors cursor-pointer mb-1.5"
+              >
+                Lupa Password? Atur Ulang Melalui Email Anda 🔑
+              </button>
+            )}
+            {authMode !== 'reset' && authMode !== 'forgot' && (
+              <button
+                onClick={() => changeAuthMode(authMode === 'login' ? 'register' : 'login')}
+                className="text-sm text-gray-500 font-medium hover:text-black transition-colors cursor-pointer"
+              >
+                {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
+              </button>
+            )}
+            {authMode === 'forgot' && (
+              <button
+                onClick={() => changeAuthMode('login')}
+                className="text-xs font-bold text-gray-400 hover:text-black transition-colors cursor-pointer"
+              >
+                ← Kembali ke Halaman Masuk
+              </button>
+            )}
           </div>
         </motion.div>
       </div>
