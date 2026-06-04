@@ -201,7 +201,7 @@ export default function TaskBoard({
     setFormError(null);
     setIsSubmitting(true);
     try {
-      const deadlineVal = newTaskDeadline || getTodayDateTimeString();
+      const deadlineVal = isPersonalTask ? "" : (newTaskDeadline || getTodayDateTimeString());
       const finalAssigneeId = isPersonalTask ? [user.uid] : (newTaskAssigneeIds.length > 0 ? newTaskAssigneeIds : null);
       
       const taskId = await createTask(
@@ -262,9 +262,9 @@ export default function TaskBoard({
   return (
     <>
     <div className={`h-full flex flex-col transition-all duration-500 ${isFocusMode ? 'bg-[#0079BF]' : 'bg-white'}`}>
-        <div className={`px-10 py-6 transition-all duration-300 flex items-center justify-between shrink-0 gap-6 ${
-         isFocusMode ? 'bg-black/10 border-white/10 text-white' : 'bg-transparent'
-       }`}>
+        <div className={`px-10 pt-1 pb-6 transition-all duration-300 flex items-center justify-between shrink-0 gap-6 border-b ${
+          isFocusMode ? 'bg-black/10 border-white/15 text-white' : 'bg-transparent border-transparent'
+        }`}>
            <div className="flex items-center gap-4 flex-wrap">
              <div className="flex items-center gap-2">
                <input
@@ -284,7 +284,7 @@ export default function TaskBoard({
                  {categories.map(c => <option key={c} value={c} className="capitalize">{c.replace('-', ' ')}</option>)}
                </select>
 
-              {!isStaff ? (
+              {true ? (
                 <button 
                    onClick={() => setShowOnlyMyTasks(!showOnlyMyTasks)}
                    className={`p-3 rounded-2xl transition-all ${
@@ -524,7 +524,7 @@ export default function TaskBoard({
                           </span>
                         </td>
                         <td className="px-4 py-4">{task.category}</td>
-                        <td className="px-4 py-4 font-medium text-gray-400">{formatDeadline(task.deadline)}</td>
+                        <td className="px-4 py-4 font-medium text-gray-400">{formatDeadline(task.deadline) || "Tanpa Deadline"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -577,7 +577,7 @@ export default function TaskBoard({
             </EditorProvider>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className={isStaff || newTaskIsPersonal ? "grid grid-cols-1" : "grid grid-cols-2 gap-4"}>
           <div className="space-y-2">
             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Category</label>
             <select 
@@ -593,15 +593,17 @@ export default function TaskBoard({
               <option value="Development">Development</option>
             </select>
           </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Deadline (Optional)</label>
-            <input 
-              type="datetime-local"
-              value={newTaskDeadline}
-              onChange={(e) => setNewTaskDeadline(e.target.value)}
-              className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm font-medium focus:ring-4 focus:ring-orange-500/10 focus:bg-white transition-all outline-none"
-            />
-          </div>
+          {!(isStaff || newTaskIsPersonal) && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Deadline (Optional)</label>
+              <input 
+                type="datetime-local"
+                value={newTaskDeadline}
+                onChange={(e) => setNewTaskDeadline(e.target.value)}
+                className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm font-medium focus:ring-4 focus:ring-orange-500/10 focus:bg-white transition-all outline-none"
+              />
+            </div>
+          )}
         </div>
         {newTaskCategory.toLowerCase().includes('finance') && (
           <div className="space-y-2">

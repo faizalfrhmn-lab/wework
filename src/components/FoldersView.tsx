@@ -309,8 +309,8 @@ export default function FoldersView({
         ) : (
           <div className="flex-1 flex flex-col h-full overflow-hidden">
             {/* Division Header */}
-            <header className={`px-10 py-8 flex items-center justify-between shrink-0 transition-all duration-300 ${
-              isFocusMode ? 'bg-[#0079BF]' : 'bg-white'
+            <header className={`px-10 pt-8 pb-3 flex items-center justify-between shrink-0 transition-all duration-300 border-b ${
+              isFocusMode ? 'bg-[#0079BF] border-white/10' : 'bg-white border-black/5'
             }`}>
               <div className="flex items-center gap-8">
                 {(isSidebarCollapsed || isFocusMode) && (
@@ -373,7 +373,7 @@ export default function FoldersView({
             </header>
 
             {/* Tab Content */}
-            <div className="flex-1 relative overflow-hidden bg-[#FAFAFA]">
+            <div className={`flex-1 relative overflow-hidden transition-colors duration-500 ${isFocusMode ? 'bg-[#0079BF]' : 'bg-[#FAFAFA]'}`}>
               <AnimatePresence mode="wait">
                 {activeSubView === 'tasks' ? (
                   <motion.div

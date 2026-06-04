@@ -33,6 +33,8 @@ interface SidebarProps {
   isCollapsed: boolean;
   setIsCollapsed: (c: boolean) => void;
   onLogout: () => void;
+  simulatedRole?: 'superadmin' | 'manager' | 'staff' | null;
+  setSimulatedRole?: (role: 'superadmin' | 'manager' | 'staff' | null) => void;
 }
 
 export default function Sidebar({ 
@@ -45,7 +47,9 @@ export default function Sidebar({
   setActiveView, 
   isCollapsed,
   setIsCollapsed,
-  onLogout 
+  onLogout,
+  simulatedRole,
+  setSimulatedRole
 }: SidebarProps) {
   const [isOrgsCollapsed, setIsOrgsCollapsed] = useState(false);
   const [isNavCollapsed, setIsNavCollapsed] = useState(false);
@@ -161,6 +165,22 @@ export default function Sidebar({
           <div className="flex-1 min-w-0">
             <p className="text-white font-bold text-sm truncate tracking-tight leading-tight">{profile?.displayName || user.displayName}</p>
             <p className="text-orange-500/80 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">{profile?.role || 'Staff Member'}</p>
+            
+            {/* Simulation/testing role switcher */}
+            {setSimulatedRole && (
+              <div className="mt-2 pt-2 border-t border-white/5 animate-fadeIn">
+                <span className="text-[8px] text-white/30 font-black tracking-wider block mb-1">SIMULASI PERAN:</span>
+                <select
+                  value={simulatedRole || profile?.role || 'staff'}
+                  onChange={(e) => setSimulatedRole(e.target.value as any)}
+                  className="bg-neutral-800 text-white/85 text-[10px] font-extrabold py-1 px-1.5 rounded border border-white/10 outline-none w-full cursor-pointer hover:bg-neutral-700 hover:text-white transition-colors"
+                >
+                  <option value="superadmin">Superadmin</option>
+                  <option value="manager">Manager</option>
+                  <option value="staff">Staff (Anggota)</option>
+                </select>
+              </div>
+            )}
           </div>
         )}
       </div>

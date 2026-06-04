@@ -274,6 +274,20 @@ export const subscribeToAuth = (callback: (user: any) => void) => {
 };
 
 export const subscribeToUserProfile = (userId: string, callback: (profile: UserProfile | null) => void) => {
+  // Check local override first
+  const localUserStr = localStorage.getItem('local_auth_user');
+  if (localUserStr) {
+    try {
+      const localUser = JSON.parse(localUserStr);
+      if (localUser.id === userId || localUser.uid === userId) {
+        callback(localUser as UserProfile);
+        return () => {};
+      }
+    } catch {
+      // Ignored
+    }
+  }
+
   const fetchProfile = async () => {
     const { data, error } = await supabase
       .from('users')

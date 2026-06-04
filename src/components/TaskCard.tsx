@@ -19,6 +19,8 @@ import {
   Send,
   AtSign,
   Trash2,
+  X,
+  Check,
 } from "lucide-react";
 import {
   Task,
@@ -133,6 +135,15 @@ export default function TaskCard({
   const [newResultLabel, setNewResultLabel] = useState("");
   const [newResultUrl, setNewResultUrl] = useState("");
   const [isFileUploading, setIsFileUploading] = useState(false);
+  
+  const [currentAttachments, setCurrentAttachments] = useState<any[]>(task.attachments || []);
+  const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
+  const [confirmDeleteSubtaskId, setConfirmDeleteSubtaskId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCurrentAttachments(task.attachments || []);
+  }, [task.attachments]);
+
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [assigneeProfiles, setAssigneeProfiles] = useState<UserProfile[]>([]);
@@ -177,13 +188,13 @@ export default function TaskCard({
   }, [task.createdBy, memberProfiles]);
 
   // Derived properties and permission gates
-  const isDeadlinePassed = task.status !== "done" && task.deadline ? new Date(task.deadline) < new Date() : false;
+  const isPersonalTask = !!task.isPersonal;
+  const isDeadlinePassed = !isPersonalTask && task.status !== "done" && task.deadline ? new Date(task.deadline) < new Date() : false;
   const isManager = profile?.role === "manager";
   const isSuperadmin = profile?.role === "superadmin";
   const creatorProfile = memberProfiles.find(p => p.id === task.createdBy);
   const creatorRole = taskCreatorProfile?.role || creatorProfile?.role;
   const isCreatorStaff = creatorRole === "staff";
-  const isPersonalTask = !!task.isPersonal;
 
   // Staff can never approve.
   // Superadmin can always approve anything.
@@ -543,12 +554,13 @@ export default function TaskCard({
       if (task.status !== 'done' && task.extensionStatus !== 'approved') {
           const buttonText = isDeadlinePassed ? "Minta Perpanjangan (Overdue)" : "Minta Perpanjangan Waktu";
           const buttonClass = isDeadlinePassed 
-            ? "w-full mt-3 py-2 bg-red-600 text-white text-[9px] font-black uppercase tracking-wider rounded-lg hover:bg-red-700 transition-colors cursor-pointer shadow-md shadow-red-500/10 text-center flex items-center justify-center gap-1"
-            : "w-full mt-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-black uppercase tracking-wider rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-center flex items-center justify-center gap-1";
+            ? "w-full mt-3 py-2 bg-red-600 text-white text-[9px] font-black uppercase tracking-wider rounded-lg hover:bg-red-700 transition-colors cursor-pointer shadow-md shadow-red-500/10 text-center flex items-center justify-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
+            : "w-full mt-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-black uppercase tracking-wider rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-center flex items-center justify-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed";
 
           return (
               <button
                   type="button"
+                  disabled={disabled}
                   onClick={async (e) => {
                      e.stopPropagation();
                      try {
@@ -709,10 +721,17 @@ export default function TaskCard({
             <span className="px-2.5 py-1 bg-gray-100 text-[#141414] text-[10px] font-black uppercase tracking-widest rounded-lg">
               {task.category || "General"}
             </span>
-            <span className="px-2.5 py-1 bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              {formatDeadline(task.deadline)}
-            </span>
+            {task.deadline ? (
+              <span className="px-2.5 py-1 bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {formatDeadline(task.deadline)}
+              </span>
+            ) : (
+              <span className="px-2.5 py-1 bg-gray-50 text-gray-500 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Tanpa Deadline
+              </span>
+            )}
             {task.initialAmount !== undefined && task.initialAmount > 0 && (
               <span className="px-2.5 py-1 bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
                 <DollarSign className="w-3 h-3" />
@@ -757,14 +776,10 @@ export default function TaskCard({
           </div>
         </div>
 
-        <StatusButtons disabled={isBlockedByDeadline || !!task.extensionRequested} />
+        <StatusButtons disabled={true} />
 
         <div className="flex items-center justify-between pt-4 mt-1 border-t border-gray-50">
           <div className="flex items-center gap-4 text-gray-300">
-            <div className="flex items-center gap-1.5" title="Links attached">
-              <LinkIcon className="w-4 h-4" />
-              <span className="text-[11px] font-bold">{taskLinks.length}</span>
-            </div>
             <div className="flex items-center gap-1.5" title="Subtasks">
               <CheckSquare className="w-4 h-4" />
               <span className="text-[11px] font-bold">{subtasks.length}</span>
@@ -1167,46 +1182,83 @@ export default function TaskCard({
                   key={st.id}
                   className="p-4 bg-white border border-gray-100 rounded-2xl transition-all group/st shadow-sm space-y-3"
                 >
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      disabled={!isEditing || isBlockedByDeadline}
-                      onClick={() =>
-                        toggleSubTask(task.id, st.id, !st.completed)
-                      }
-                      className={`w-5 h-5 rounded-[0.5rem] border flex items-center justify-center transition-colors ${
-                        st.completed
-                          ? "bg-green-500 border-green-500"
-                          : "border-gray-300"
-                      } ${!isEditing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                    >
-                      {st.completed && (
-                        <CheckSquare className="w-3.5 h-3.5 text-white" />
-                      )}
-                    </button>
-                    <span
-                      className={`text-sm font-bold flex-1 ${st.completed ? "text-gray-400 line-through" : "text-gray-700"}`}
-                    >
-                      {st.title}
-                    </span>
-                    {st.url && (
-                      <a
-                        href={st.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-indigo-500 hover:text-indigo-600 p-1"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
-                    )}
-                    {isEditing && canDelete && (
-                      <button
-                        type="button"
-                        onClick={() => deleteSubTask(st.id)}
-                        className="text-red-400 hover:text-red-600 p-1 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                  <div className="flex items-center gap-3 w-full">
+                    {confirmDeleteSubtaskId === st.id ? (
+                      <div className="flex items-center justify-between w-full animate-fadeIn">
+                        <div className="flex items-center gap-1.5 shrink-0 max-w-[60%]">
+                          <span className="p-1 rounded bg-red-50 text-red-500 shrink-0">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </span>
+                          <span className="text-xs font-bold text-red-600 truncate" title={st.title}>Hapus sub task?</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                setSubtasks(prev => prev.filter(item => item.id !== st.id));
+                                setConfirmDeleteSubtaskId(null);
+                                await deleteSubTask(st.id);
+                              } catch (err: any) {
+                                alert("Gagal menghapus sub task: " + err.message);
+                              }
+                            }}
+                            className="px-2 py-1.5 bg-red-500 hover:bg-red-600 text-white text-[9px] font-bold uppercase rounded-lg transition-colors cursor-pointer flex items-center gap-0.5"
+                          >
+                            <Check className="w-3" /> Ya
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteSubtaskId(null)}
+                            className="px-2 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-500 text-[9px] font-bold uppercase rounded-lg transition-colors cursor-pointer flex items-center gap-0.5"
+                          >
+                            <X className="w-3" /> Batal
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled={!isEditing || isBlockedByDeadline}
+                          onClick={() =>
+                            toggleSubTask(task.id, st.id, !st.completed)
+                          }
+                          className={`w-5 h-5 rounded-[0.5rem] border flex items-center justify-center transition-colors ${
+                            st.completed
+                              ? "bg-green-500 border-green-500"
+                              : "border-gray-300"
+                          } ${!isEditing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                        >
+                          {st.completed && (
+                            <CheckSquare className="w-3.5 h-3.5 text-white" />
+                          )}
+                        </button>
+                        <span
+                          className={`text-sm font-bold flex-1 ${st.completed ? "text-gray-400 line-through" : "text-gray-700"}`}
+                        >
+                          {st.title}
+                        </span>
+                        {st.url && (
+                          <a
+                            href={st.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-500 hover:text-indigo-600 p-1"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        )}
+                        {isEditing && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteSubtaskId(st.id)}
+                            className="text-red-400 hover:text-red-600 p-1 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -1380,76 +1432,6 @@ export default function TaskCard({
             </div>
           </div>
 
-          {/* Links Management */}
-          <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between">
-              <h5 className="text-[11px] font-black uppercase tracking-widest text-gray-800 flex items-center gap-2">
-                <LinkIcon className="w-3.5 h-3.5" />
-                Pinned Links
-              </h5>
-              {isEditing && (
-                <button
-                  type="button"
-                  onClick={() => setShowAddLink(!showAddLink)}
-                  className="text-orange-500 hover:text-orange-600 transition-colors cursor-pointer"
-                >
-                  <PlusCircle className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {isEditing && showAddLink && (
-              <form
-                onSubmit={handleAddLink}
-                className="space-y-2 bg-white p-4 rounded-2xl border border-gray-200"
-              >
-                <input
-                  type="text"
-                  required
-                  value={newLinkLabel}
-                  onChange={(e) => setNewLinkLabel(e.target.value)}
-                  placeholder="Label (e.g. Design Doc)"
-                  className="w-full text-xs font-bold bg-gray-50 border-none rounded-xl px-4 py-3 focus:ring-0 shadow-inner outline-none"
-                />
-                <input
-                  type="url"
-                  required
-                  value={newLinkUrl}
-                  onChange={(e) => setNewLinkUrl(e.target.value)}
-                  placeholder="Link URL"
-                  className="w-full text-xs bg-gray-50 border-none rounded-xl px-4 py-3 focus:ring-0 shadow-inner outline-none"
-                />
-                <button
-                  type="submit"
-                  className="w-full bg-black text-white text-[10px] font-black uppercase py-4 rounded-xl active:scale-95 shadow-xl hover:bg-orange-500 transition-all cursor-pointer"
-                >
-                  Add Link
-                </button>
-              </form>
-            )}
-
-            <div className="space-y-2">
-              {taskLinks.map((link) => (
-                <a
-                  key={link.id}
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl hover:border-indigo-500/30 transition-all group/link shadow-sm"
-                >
-                  <div className="p-2 container bg-indigo-50 text-indigo-500 rounded-xl">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </div>
-                  <span className="text-xs font-black text-gray-700 flex-1 truncate">
-                    {link.label}
-                  </span>
-                  <div className="opacity-0 group-hover/link:opacity-100 transition-opacity">
-                    <Paperclip className="w-3.5 h-3.5 text-gray-400" />
-                  </div>
-                </a>
-              ))}
-            </div>
-          </div>
 
           {/* Lampiran & Hasil Pekerjaan Section */}
           <div className="space-y-4 pt-4 border-t border-gray-100">
@@ -1458,173 +1440,150 @@ export default function TaskCard({
                 <Paperclip className="w-3.5 h-3.5 text-orange-500" />
                 Lampiran & Hasil Pekerjaan
               </h5>
-              {canEdit && (
+              {isEditing && (
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => setShowAddResultAttachment(!showAddResultAttachment)}
                     className="px-2.5 py-1 bg-orange-600/10 hover:bg-orange-600/20 text-orange-600 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1"
                   >
-                    + Tambah Link / File
+                    + Tambah Link
                   </button>
                 </div>
               )}
             </div>
 
-            {canEdit && showAddResultAttachment && (
-              <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 mt-2 space-y-4 animate-fadeIn">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Option A: Upload File */}
-                  <div className="p-3 bg-white rounded-xl border border-gray-150 flex flex-col justify-between space-y-2">
-                    <div>
-                      <span className="text-[9px] font-black uppercase tracking-wider text-gray-400 block">Option A: Unggah File</span>
-                      <p className="text-[10px] text-gray-500 mt-1">Mengunggah file dokumen, screenshot, PDF, zip, dsb.</p>
-                    </div>
-                    <div>
-                      <input
-                        type="file"
-                        id="result-file-upload"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          
-                          setIsFileUploading(true);
-                          try {
-                            const reader = new FileReader();
-                            reader.onload = async (event) => {
-                              const base64 = event.target?.result as string;
-                              const newAttachment = {
-                                name: file.name,
-                                url: base64,
-                                type: 'file' as const,
-                                uploadedAt: new Date().toISOString(),
-                                uploadedBy: profile?.displayName || user.displayName || user.email || 'Pelaksana'
-                              };
-                              const currentAttachments = task.attachments || [];
-                              await updateTaskAttachments(task.id, [...currentAttachments, newAttachment]);
-                              alert("File hasil pekerjaan berhasil diunggah!");
-                              setIsFileUploading(false);
-                            };
-                            reader.readAsDataURL(file);
-                          } catch (err: any) {
-                            alert("Gagal mengunggah file: " + err.message);
-                            setIsFileUploading(false);
-                          }
-                        }}
-                      />
-                      <label
-                        htmlFor="result-file-upload"
-                        className="w-full py-2 bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center block"
-                      >
-                        {isFileUploading ? "Mengunggah..." : "Pilih & Unggah File"}
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Option B: Add URL Link */}
-                  <div className="p-3 bg-white rounded-xl border border-gray-150 space-y-3">
-                    <div>
-                      <span className="text-[9px] font-black uppercase tracking-wider text-gray-400 block">Option B: Tambah Link</span>
-                      <p className="text-[10px] text-gray-500 mt-1">Menambahkan link Google Drive, Figma, GitHub, Website, dsb.</p>
-                    </div>
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        placeholder="Nama Link (cth: Draft Laporan)"
-                        value={newResultLabel}
-                        onChange={(e) => setNewResultLabel(e.target.value)}
-                        className="w-full text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-orange-500 bg-white"
-                      />
-                      <input
-                        type="url"
-                        placeholder="Masukan URL Link"
-                        value={newResultUrl}
-                        onChange={(e) => setNewResultUrl(e.target.value)}
-                        className="w-full text-xs bg-gray-50 border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-orange-500 bg-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!newResultLabel.trim() || !newResultUrl.trim()) {
-                            alert("Mohon isi nama link dan URL link dengan lengkap.");
-                            return;
-                          }
-                          try {
-                            const newAttachment = {
-                              name: newResultLabel.trim(),
-                              url: newResultUrl.trim(),
-                              type: 'link' as const,
-                              uploadedAt: new Date().toISOString(),
-                              uploadedBy: profile?.displayName || user.displayName || user.email || 'Pelaksana'
-                            };
-                            const currentAttachments = task.attachments || [];
-                            await updateTaskAttachments(task.id, [...currentAttachments, newAttachment]);
-                            setNewResultLabel("");
-                            setNewResultUrl("");
-                            alert("Link hasil pekerjaan berhasil ditambahkan!");
-                          } catch (err: any) {
-                            alert("Gagal menambahkan link: " + err.message);
-                          }
-                        }}
-                        className="w-full py-2 bg-black text-white text-[10px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
-                      >
-                        Simpan Link
-                      </button>
-                    </div>
-                  </div>
+            {isEditing && showAddResultAttachment && (
+              <div className="p-4 bg-gray-50 rounded-2xl border border-gray-205 mt-2 space-y-3 animate-fadeIn border-solid">
+                <div>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-orange-600 block">Tambah Link Lampiran / Hasil Pekerjaan</span>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Masukkan tautan menuju Google Drive, Figma, GitHub, spreadsheet, dll.</p>
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="Nama Link (cth: Laporan Keuangan, Link Figma)"
+                    value={newResultLabel}
+                    onChange={(e) => setNewResultLabel(e.target.value)}
+                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-orange-500 bg-white"
+                  />
+                  <input
+                    type="url"
+                    placeholder="Masukkan URL Link (https://...)"
+                    value={newResultUrl}
+                    onChange={(e) => setNewResultUrl(e.target.value)}
+                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-orange-500 bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!newResultLabel.trim() || !newResultUrl.trim()) {
+                        alert("Mohon isi nama link dan URL link dengan lengkap.");
+                        return;
+                      }
+                      try {
+                        const newAttachment = {
+                          name: newResultLabel.trim(),
+                          url: newResultUrl.trim(),
+                          type: 'link' as const,
+                          uploadedAt: new Date().toISOString(),
+                          uploadedBy: profile?.displayName || user.displayName || user.email || 'Pelaksana'
+                        };
+                        const updated = [...currentAttachments, newAttachment];
+                        setCurrentAttachments(updated);
+                        await updateTaskAttachments(task.id, updated);
+                        setNewResultLabel("");
+                        setNewResultUrl("");
+                        setShowAddResultAttachment(false);
+                      } catch (err: any) {
+                        alert("Gagal menambahkan link: " + err.message);
+                      }
+                    }}
+                    className="w-full py-2 bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                  >
+                    Simpan Link
+                  </button>
                 </div>
               </div>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {(task.attachments || []).length === 0 ? (
+              {currentAttachments.length === 0 ? (
                 <div className="col-span-full py-6 text-center text-xs text-gray-400 italic bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
                   Belum ada file atau link hasil pekerjaan yang diunggah.
                 </div>
               ) : (
-                (task.attachments || []).map((attachment, idx) => (
+                currentAttachments.map((attachment, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-orange-500/20 transition-all group"
+                    className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-orange-500/20 transition-all group min-h-[58px]"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <div className={`p-2 rounded-lg shrink-0 ${attachment.type === 'file' ? 'bg-orange-50 text-orange-500' : 'bg-blue-50 text-blue-500'}`}>
-                        {attachment.type === 'file' ? <Paperclip className="w-3.5 h-3.5" /> : <LinkIcon className="w-3.5 h-3.5" />}
+                    {confirmDeleteIdx === idx ? (
+                      <div className="flex items-center justify-between w-full animate-fadeIn">
+                        <div className="flex items-center gap-1.5 shrink-0 max-w-[60%]">
+                          <span className="p-1 rounded bg-red-50 text-red-500 shrink-0">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </span>
+                          <span className="text-[10px] font-bold text-red-600 truncate" title={attachment.name}>Hapus link?</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const updated = currentAttachments.filter((_, i) => i !== idx);
+                                setCurrentAttachments(updated);
+                                setConfirmDeleteIdx(null);
+                                await updateTaskAttachments(task.id, updated);
+                              } catch (err: any) {
+                                alert("Gagal menghapus link: " + err.message);
+                              }
+                            }}
+                            className="px-2 py-1.5 bg-red-500 hover:bg-red-600 text-white text-[9px] font-bold uppercase rounded-lg transition-colors cursor-pointer flex items-center gap-0.5"
+                          >
+                            <Check className="w-3 h-3" /> Ya
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteIdx(null)}
+                            className="px-2 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-500 text-[9px] font-bold uppercase rounded-lg transition-colors cursor-pointer flex items-center gap-0.5"
+                          >
+                            <X className="w-3 h-3" /> Batal
+                          </button>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <a
-                          href={attachment.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs font-bold text-gray-700 hover:text-orange-500 truncate block cursor-pointer"
-                          title={attachment.name}
-                        >
-                          {attachment.name}
-                        </a>
-                        <p className="text-[9px] text-gray-450 truncate">
-                          Upload: {attachment.uploadedBy} • {new Date(attachment.uploadedAt).toLocaleDateString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </div>
-                    </div>
-                    {canEdit && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (confirm(`Hapus "${attachment.name}"?`)) {
-                            try {
-                              const updated = (task.attachments || []).filter((_, i) => i !== idx);
-                              await updateTaskAttachments(task.id, updated);
-                              alert("Lampiran hasil pekerjaan terhapus.");
-                            } catch (err: any) {
-                              alert("Gagal menghapus lampiran: " + err.message);
-                            }
-                          }
-                        }}
-                        className="text-gray-350 hover:text-red-500 p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className={`p-2 rounded-lg shrink-0 ${attachment.type === 'file' ? 'bg-orange-50 text-orange-500' : 'bg-blue-50 text-blue-500'}`}>
+                            {attachment.type === 'file' ? <Paperclip className="w-3.5 h-3.5" /> : <LinkIcon className="w-3.5 h-3.5" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <a
+                              href={attachment.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-bold text-gray-700 hover:text-orange-500 truncate block cursor-pointer"
+                              title={attachment.name}
+                            >
+                              {attachment.name}
+                            </a>
+                            <p className="text-[9px] text-gray-450 truncate">
+                              Upload: {attachment.uploadedBy} • {new Date(attachment.uploadedAt).toLocaleDateString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                        {isEditing && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteIdx(idx)}
+                            className="text-gray-450 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition-all cursor-pointer shrink-0"
+                            title="Hapus Link"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 ))
@@ -1648,7 +1607,7 @@ export default function TaskCard({
                 </p>
               </div>
             )}
-            <StatusButtons disabled={isBlockedByDeadline || !!task.extensionRequested} />
+            <StatusButtons disabled={isBlockedByDeadline || !!task.extensionRequested || !isEditing} />
           </div>
 
           {/* Pengelolaan Perpanjangan Waktu (2 Columns) */}
@@ -1685,6 +1644,7 @@ export default function TaskCard({
                   ) : (
                     <button
                       type="button"
+                      disabled={!isEditing}
                       onClick={async (e) => {
                         e.stopPropagation();
                         try {
@@ -1694,7 +1654,7 @@ export default function TaskCard({
                           alert("Gagal mengajukan perpanjangan: " + (err.message || err));
                         }
                       }}
-                      className={`w-full py-2 px-2 text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center flex items-center justify-center gap-1 ${
+                      className={`w-full py-2 px-2 text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center flex items-center justify-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed ${
                         isDeadlinePassed 
                           ? "bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-500/10" 
                           : "bg-amber-100 hover:bg-amber-200 text-amber-800"
@@ -1739,14 +1699,16 @@ export default function TaskCard({
                         </span>
                         <input
                           type="datetime-local"
+                          disabled={!isEditing}
                           value={newDeadlineDate}
                           onChange={(e) => setNewDeadlineDate(e.target.value)}
-                          className="w-full text-[10px] p-2 border border-gray-200 rounded-lg bg-gray-50 font-bold text-gray-700"
+                          className="w-full text-[10px] p-2 border border-gray-200 rounded-lg bg-gray-50 font-bold text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </div>
                       <div className="flex gap-1.5">
                         <button
                           type="button"
+                          disabled={!isEditing}
                           onClick={async (e) => {
                             e.stopPropagation();
                             try {
@@ -1756,12 +1718,13 @@ export default function TaskCard({
                               alert("Gagal menyetujui perpanjangan: " + (err.message || err));
                             }
                           }}
-                          className="flex-1 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center"
+                          className="flex-1 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Setujui
                         </button>
                         <button
                           type="button"
+                          disabled={!isEditing}
                           onClick={async (e) => {
                             e.stopPropagation();
                             try {
@@ -1771,7 +1734,7 @@ export default function TaskCard({
                               alert("Gagal menolak perpanjangan: " + (err.message || err));
                             }
                           }}
-                          className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center"
+                          className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer text-center disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Tolak
                         </button>
