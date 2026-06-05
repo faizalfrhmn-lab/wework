@@ -29,6 +29,9 @@ const canUserSeeTask = (task: Task, userUid: string, userRole: 'superadmin' | 'm
 
   // 1. Task Pribadi
   if (task.isPersonal) {
+    if (userRole === 'manager') {
+      return task.createdBy === userUid || creatorRole === 'staff';
+    }
     return task.createdBy === userUid;
   }
 

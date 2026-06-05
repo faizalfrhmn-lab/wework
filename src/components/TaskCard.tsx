@@ -881,7 +881,7 @@ export default function TaskCard({
                 <button
                   type="button"
                   onClick={() => {
-                    if (isBlockedByDeadline) {
+                    if (false) {
                       alert("Tenggat waktu tugas sudah terlewati! Anda harus mengajukan perpanjangan waktu terlebih dahulu.");
                       return;
                     }
@@ -891,7 +891,7 @@ export default function TaskCard({
                     isEditing
                       ? 'bg-orange-600 border-orange-500 text-white hover:bg-orange-700 shadow-md shadow-orange-500/10'
                       : 'bg-orange-50 border-orange-100 text-orange-600 hover:bg-orange-100'
-                  } ${isBlockedByDeadline ? 'opacity-55 cursor-not-allowed' : ''}`}
+                  }`}
                 >
                   {isEditing ? (
                     <>
@@ -1220,7 +1220,7 @@ export default function TaskCard({
                       <>
                         <button
                           type="button"
-                          disabled={!isEditing || isBlockedByDeadline}
+                          disabled={!isEditing}
                           onClick={() =>
                             toggleSubTask(task.id, st.id, !st.completed)
                           }

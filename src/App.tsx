@@ -29,9 +29,6 @@ import { isSupabaseConfigured } from './lib/supabase';
 export default function App() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [simulatedRole, setSimulatedRole] = useState<'superadmin' | 'manager' | 'staff' | null>(() => {
-    return localStorage.getItem('simulated_role') as any || null;
-  });
   const [loading, setLoading] = useState(true);
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
@@ -391,26 +388,12 @@ export default function App() {
 
   const selectedOrg = orgs.find(o => o.id === selectedOrgId);
 
-  const handleSetSimulatedRole = (role: 'superadmin' | 'manager' | 'staff' | null) => {
-    setSimulatedRole(role);
-    if (role) {
-      localStorage.setItem('simulated_role', role);
-    } else {
-      localStorage.removeItem('simulated_role');
-    }
-  };
-
-  const activeProfile = profile ? {
-    ...profile,
-    role: (simulatedRole || profile.role) as 'superadmin' | 'manager' | 'staff'
-  } : null;
-
   return (
     <div className={`flex h-screen font-sans text-slate-900 overflow-hidden transition-colors duration-500 ${isFocusMode ? 'bg-[#0079BF]' : 'bg-[#F5F5F5]'}`}>
       {!isFocusMode && (
         <Sidebar 
           user={user}
-          profile={activeProfile}
+          profile={profile}
           orgs={orgs}
           selectedOrgId={selectedOrgId}
           setSelectedOrgId={setSelectedOrgId}
@@ -419,8 +402,6 @@ export default function App() {
           isCollapsed={isSidebarCollapsed}
           setIsCollapsed={setIsSidebarCollapsed}
           onLogout={logout}
-          simulatedRole={simulatedRole}
-          setSimulatedRole={handleSetSimulatedRole}
         />
       )}
       
@@ -431,7 +412,7 @@ export default function App() {
       }`}>
         <MainContent 
           user={user}
-          profile={activeProfile}
+          profile={profile}
           selectedOrg={selectedOrg}
           setSelectedOrgId={setSelectedOrgId}
           activeView={activeView}

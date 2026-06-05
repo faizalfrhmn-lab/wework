@@ -193,15 +193,13 @@ export default function LibraryExplorer({ user, profile, org, division }: Librar
           />
         </div>
         <div className="flex items-center gap-2">
-           {isManager && (
-             <button 
-               onClick={() => setIsFolderModalOpen(true)}
-               className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-100 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-all"
-             >
-               <FolderPlus className="w-4 h-4" />
-               New Folder
-             </button>
-           )}
+           <button 
+             onClick={() => setIsFolderModalOpen(true)}
+             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-100 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-all"
+           >
+             <FolderPlus className="w-4 h-4" />
+             New Folder
+           </button>
            <button 
              onClick={() => setIsLinkModalOpen(true)}
              className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-500/20 hover:bg-orange-600 transition-all"
@@ -262,7 +260,7 @@ export default function LibraryExplorer({ user, profile, org, division }: Librar
                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Nested Folder</p>
                 
                 <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                  {isManager && (
+                  {true && (
                     <div className="relative group/menu">
                       <button
                         onClick={(e) => {
@@ -349,7 +347,7 @@ export default function LibraryExplorer({ user, profile, org, division }: Librar
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {isManager && (
+                    {true && (
                       <div className="relative group/menu">
                         <button
                           onClick={(e) => {

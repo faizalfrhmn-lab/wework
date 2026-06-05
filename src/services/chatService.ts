@@ -139,7 +139,8 @@ export const subscribeToMessages = (orgId: string, userId: string, divisionId: s
     let query = supabase
       .from('messages')
       .select('*')
-      .eq('organizationId', orgId);
+      .eq('organizationId', orgId)
+      .is('taggedTaskId', null);
 
     query = query.order('createdAt', { ascending: true })
       .limit(100);
@@ -174,7 +175,8 @@ export const clearChatMessages = async (orgId: string, divisionId: string | null
     let query = supabase
       .from('messages')
       .delete()
-      .eq('organizationId', orgId);
+      .eq('organizationId', orgId)
+      .is('taggedTaskId', null);
 
     if (divisionId) {
       query = query.eq('divisionId', divisionId);
