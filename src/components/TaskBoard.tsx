@@ -22,53 +22,16 @@ const canUserSeeTask = (task: Task, userUid: string, userRole: 'superadmin' | 'm
   if (userRole === 'superadmin') return true;
 
   const creator = allUsers.find(u => u.id === task.createdBy);
-  const creatorRole = creator?.role;
+  const creatorRole = creator?.role || (task.createdBy === 'superadmin' ? 'superadmin' : 'staff');
 
   const assignees = task.assigneeIds || (task.assigneeId ? [task.assigneeId] : []);
   const isUserAssignee = assignees.includes(userUid);
 
-  // 1. Task Pribadi
-  if (task.isPersonal) {
-    if (userRole === 'manager') {
-      return task.createdBy === userUid || creatorRole === 'staff';
-    }
-    return task.createdBy === userUid;
-  }
-
-  // 2. Task Private (Super Admin to Manager)
-  const isSuperAdminCreator = creatorRole === 'superadmin' || task.createdBy === 'superadmin';
-  const hasManagerAssignee = assignees.some(id => {
-    const u = allUsers.find(usr => usr.id === id);
-    return u?.role === 'manager';
-  });
-
-  if (isSuperAdminCreator && hasManagerAssignee) {
-    if (userRole === 'manager') {
-      return isUserAssignee;
-    }
-    if (userRole === 'staff') {
-      return false;
-    }
-  }
-
-  // 3. Task Manager ke Staff
-  const isManagerCreator = creatorRole === 'manager';
-  const hasStaffAssignee = assignees.some(id => {
-    const u = allUsers.find(usr => usr.id === id);
-    return u?.role === 'staff';
-  });
-
-  if (isManagerCreator && hasStaffAssignee) {
-    if (userRole === 'manager') {
-      return task.createdBy === userUid || isUserAssignee;
-    }
-    if (userRole === 'staff') {
-      return true;
-    }
-  }
-
-  // Fallbacks:
+  // 1. Staff Logic
   if (userRole === 'staff') {
+    if (task.isPersonal) {
+      return task.createdBy === userUid;
+    }
     const isAnyStaffAssignee = assignees.some(id => {
       const u = allUsers.find(usr => usr.id === id);
       return u?.role === 'staff';
@@ -76,11 +39,45 @@ const canUserSeeTask = (task: Task, userUid: string, userRole: 'superadmin' | 'm
     return isUserAssignee || isAnyStaffAssignee || task.createdBy === userUid;
   }
 
+  // 2. Manager Logic
   if (userRole === 'manager') {
-    return task.createdBy === userUid || isUserAssignee;
+    // Managers can always see their own tasks (assigned or created)
+    if (isUserAssignee || task.createdBy === userUid) return true;
+
+    // Staff-related tasks are fully visible to managers:
+    // - Any task assigned to staff
+    // - Any task created by staff (including staff personal tasks)
+    const isStaffCreator = creatorRole === 'staff';
+    const hasStaffAssignees = assignees.some(id => {
+      const u = allUsers.find(usr => usr.id === id);
+      return u?.role === 'staff';
+    });
+
+    if (isStaffCreator || hasStaffAssignees) {
+      return true;
+    }
+
+    // Manager-related tasks:
+    // - Cannot see other managers' tasks assigned from superadmin
+    // - Can see manager tasks created by a manager (fellow manager or self)
+    const isSuperadminCreator = creatorRole === 'superadmin' || task.createdBy === 'superadmin';
+    const hasManagerAssignee = assignees.some(id => {
+      const u = allUsers.find(usr => usr.id === id);
+      return u?.role === 'manager';
+    });
+
+    if (hasManagerAssignee || creatorRole === 'manager') {
+      if (isSuperadminCreator) {
+        // If assigned from superadmin to a manager, only assigned managers can see it
+        return isUserAssignee;
+      } else {
+        // Created by a manager, fellow managers can see it
+        return true;
+      }
+    }
   }
 
-  return true;
+  return false;
 };
 
 const getTodayDateTimeString = () => {

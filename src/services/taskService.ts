@@ -382,9 +382,30 @@ export const updateTaskStatus = async (taskId: string, status: string, userId: s
     if (fetchError) throw fetchError;
     const task = transformTask(dbTask);
 
-    const updateData: any = { status };
+    const progressMap: { [key: string]: number } = {
+      'todo': 0,
+      'revision': 25,
+      'in-progress': 50,
+      'review': 85,
+      'done': 100
+    };
+    const progress = progressMap[status] !== undefined ? progressMap[status] : task.progress;
+
+    const updateData: any = { status, progress };
     if (status === 'done') {
       updateData.completedAt = new Date().toISOString();
+      
+      // Synchronize all subtasks as completed when the main task is done/approved
+      await supabase
+        .from('subtasks')
+        .update({ completed: true })
+        .eq('taskId', taskId);
+    } else if (status === 'todo') {
+      // Synchronize all subtasks as incomplete when restarted to todo
+      await supabase
+        .from('subtasks')
+        .update({ completed: false })
+        .eq('taskId', taskId);
     }
     
     const { error: updateError } = await supabase
